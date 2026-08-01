@@ -27,6 +27,16 @@
 // TODO:
 // - Fix resource pools.
 
+#if defined(__ANDROID__)
+// Android: allows loading a custom Vulkan driver (Mesa Turnip) via
+// libadrenotools instead of the vendor proprietary blob. Implemented in
+// MarathonRecomp/os/android/vulkan_driver_android.cpp; returns nullptr
+// (meaning: use the normal loader) if no custom driver is selected.
+// Must be declared at file scope: 'extern "C"' is not allowed inside a
+// function body.
+extern "C" void *AndroidGetCustomVulkanLoader();
+#endif
+
 namespace plume {
     // Backend constants.
 
@@ -4544,14 +4554,6 @@ namespace plume {
 #else
     VulkanInterface::VulkanInterface() {
 #endif
-#if defined(__ANDROID__)
-        // Android: allows loading a custom Vulkan driver (Mesa Turnip) via
-        // libadrenotools instead of the vendor proprietary blob. Implemented in
-        // MarathonRecomp/os/android/vulkan_driver_android.cpp; returns nullptr
-        // (meaning: use the normal loader) if no custom driver is selected.
-        extern "C" void *AndroidGetCustomVulkanLoader();
-#endif
-
         VkResult res = VK_SUCCESS;
 #if defined(__ANDROID__)
         void *customLoader = AndroidGetCustomVulkanLoader();
