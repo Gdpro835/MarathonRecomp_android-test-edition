@@ -162,6 +162,18 @@ jobs:
           restore-keys: |
             gradle-
 
+      # Debug APKs must be signed with a STABLE key across runs: a fresh runner
+      # generates a new ~/.android/debug.keystore each time, so an APK from run
+      # #2 cannot be installed over the one from run #1 (signature mismatch, the
+      # installer silently dismisses the dialog). Cache the keystore.
+      - name: Cache Android debug keystore
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: android-debug-keystore-v1
+          restore-keys: |
+            android-debug-keystore-
+
       # ── vcpkg (provides freetype + curl for arm64-android) ─────────────────
       - name: Bootstrap vcpkg
         run: |

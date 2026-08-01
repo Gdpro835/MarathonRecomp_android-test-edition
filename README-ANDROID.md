@@ -44,11 +44,26 @@ For the smoothest first run, start with the default graphics settings. The Andro
 
 ## Installation
 
-1. Download the latest APK from the repository's [Releases](https://github.com/Player124413/MarathonRecomp/releases) page.
+1. Download the latest APK from the repository's [Releases](https://github.com/Player124413/MarathonRecomp/releases) page (or from the workflow artifacts — note that GitHub artifact downloads are **zip files**: extract `app-debug.apk` from the zip first).
 2. Allow your browser or file manager to install apps from unknown sources when Android asks.
 3. Install and open **Marathon Recompiled**. The first launch creates the app's folders and prepares the bundled graphics driver.
 4. Tap **Install game files (.zip / folder)** in the launcher and pick your game dump — either a ZIP archive or an extracted folder. The app finds the game inside the archive automatically and copies everything into place with a progress display. You can also choose **ISO / DLC packages**, select the base game and optional DLC files together, then launch once to verify and install them.
 5. Tap **Launch game**.
+
+### If the APK "doesn't install" (the dialog just disappears)
+
+The debug APK from CI is signed with a debug key. A fresh GitHub runner generates
+a new key on every run, so **an APK from run #2 cannot be installed over the APK
+from run #1** (signature mismatch — the installer silently dismisses the dialog).
+The workflow now caches the keystore, but if you already hit this:
+
+- **Uninstall the old app first**, then install the new APK.
+- Make sure the download finished and the file ends in `.apk` (GitHub artifacts
+  are zips — extract `app-debug.apk`).
+- Give your browser/file manager permission to install unknown apps
+  (Settings → Apps → [browser] → Install unknown apps → Allow).
+- Check the device: this APK is **arm64-v8a only**, Android 10+.
+- For the exact error, use adb: `adb install -r app-debug.apk`.
 
 No PC is required at any point.
 
