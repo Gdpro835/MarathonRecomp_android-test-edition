@@ -39,9 +39,11 @@ jobs:
           fetch-depth: 1
 
       # ── Git submodules (automatic) ─────────────────────────────────────────
-      # MoltenVK / nativefiledialog / vcpkg are desktop-only and not needed for
-      # the Android build. tools/* are recursive for their own thirdparty
-      # (fmt, zstd, xxHash, simde, dxc-bin, ...).
+      # MoltenVK / nativefiledialog are desktop-only and not needed for the
+      # Android build. tools/* are recursive for their own thirdparty
+      # (fmt, zstd, xxHash, simde, dxc-bin, ...). vcpkg provides the Android
+      # dependencies (freetype for msdf-atlas-gen, curl) via the arm64-android
+      # triplet.
       - name: Checkout submodules
         run: |
           for attempt in 1 2 3; do
@@ -50,7 +52,7 @@ jobs:
                 thirdparty/SDL thirdparty/SDL_mixer thirdparty/msdf-atlas-gen \
                 thirdparty/stb thirdparty/concurrentqueue thirdparty/magic_enum \
                 thirdparty/unordered_dense thirdparty/json thirdparty/ddspp \
-                thirdparty/imgui thirdparty/implot \
+                thirdparty/imgui thirdparty/implot thirdparty/vcpkg \
                 MarathonRecompResources; then
               echo "Submodules initialized (attempt $attempt)"
               break
@@ -160,6 +162,12 @@ jobs:
           restore-keys: |
             gradle-
 
+      # ── vcpkg (provides freetype + curl for arm64-android) ─────────────────
+      - name: Bootstrap vcpkg
+        run: |
+          "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
+          "$VCPKG_ROOT/vcpkg" version
+
       # ── Host recompiler tools ───────────────────────────────────────────────
       # Built with clang (like the repo's own CI) and with the tools' LTO
       # disabled (MARATHON_RECOMP_OPTIMIZE_TOOLS=OFF) - LTO archives from a
@@ -186,11 +194,15 @@ jobs:
           echo "FFMPEG_CORE_LOCAL_LIB_DIR=$GITHUB_WORKSPACE/ci-ffmpeg/android-arm64/lib" >> "$GITHUB_ENV"
 
       # ── Native library (.so) ────────────────────────────────────────────────
+      # vcpkg toolchain + NDK chainload: installs freetype (msdf-atlas-gen) and
+      # curl for arm64-android, exactly like the desktop build gets them.
       - name: Configure Android build
         run: |
           cmake -S . -B out/build/android-arm64 -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
+            -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_TARGET_TRIPLET=arm64-android \
+            -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
             -DANDROID_ABI=arm64-v8a \
             -DANDROID_PLATFORM=android-29 \
             -DANDROID_STL=c++_static \
@@ -204,6 +216,9 @@ jobs:
 
       - name: Build libmain.so
         run: |
+          # The host XenosRecomp links libdxcompiler.so and runs during this
+          # build (shader recompilation); make sure the dxc libs are findable.
+          export LD_LIBRARY_PATH="$GITHUB_WORKSPACE/tools/XenosRecomp/thirdparty/dxc-bin/lib/x64:${LD_LIBRARY_PATH:-}"
           cmake --build out/build/android-arm64 --target MarathonRecomp -j4
           test -f out/build/android-arm64/MarathonRecomp/libmain.so
 
