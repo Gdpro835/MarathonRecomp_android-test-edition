@@ -53,42 +53,41 @@ endif()
 # tools/ci/build_ffmpeg_android.sh. Skips the download/extract step entirely.
 set(FFMPEG_CORE_LOCAL_LIB_DIR "" CACHE PATH "Directory containing prebuilt static ffmpeg libraries (lib/*.a)")
 
-# Download prebuilt ffmpeg
-set(FFMPEG_CORE_LOCAL_ZIP "" CACHE FILEPATH "Path to a local ffmpeg-<arch>.zip to use instead of downloading")
-if(FFMPEG_CORE_LOCAL_LIB_DIR)
+if (FFMPEG_CORE_LOCAL_LIB_DIR)
 	set(FFMPEG_LIB_PATH "${FFMPEG_CORE_LOCAL_LIB_DIR}")
-else()
+else ()
+	# Download prebuilt ffmpeg
+	set(FFMPEG_CORE_LOCAL_ZIP "" CACHE FILEPATH "Path to a local ffmpeg-<arch>.zip to use instead of downloading")
 	set(FFMPEG_ZIP_PATH "${CMAKE_BINARY_DIR}/external/ffmpeg-${FFMPEG_GIT_SHA}.zip")
-	if(FFMPEG_CORE_LOCAL_ZIP)
+	if (FFMPEG_CORE_LOCAL_ZIP)
 		set(FFMPEG_ZIP_PATH "${FFMPEG_CORE_LOCAL_ZIP}")
 		message(STATUS "Using local FFMPEG prebuilts at ${FFMPEG_ZIP_PATH}")
-	elseif(NOT EXISTS "${FFMPEG_ZIP_PATH}")
+	elseif (NOT EXISTS "${FFMPEG_ZIP_PATH}")
 		message(STATUS "Downloading FFMPEG prebuilts...")
-	file(DOWNLOAD https://github.com/sonicnext-dev/ffmpeg-core/releases/download/${FFMPEG_GIT_SHA}/${FFMPEG_PREBUILTS_NAME}
-			"${FFMPEG_ZIP_PATH}" SHOW_PROGRESS
-		STATUS FILE_STATUS)
-	list(GET FILE_STATUS 0 STATUS_CODE)
-	if (NOT STATUS_CODE EQUAL 0)
-		file(REMOVE "${FFMPEG_ZIP_PATH}") # CMake create 0 byte file even if URL is invalid. So need to delete it.
-		if (ANDROID)
-			message(FATAL_ERROR "No FFMPEG prebuilt found with corresponding commit SHA (${FFMPEG_GIT_SHA}). "
-				"The Android build needs ffmpeg-android-arm64.zip from the sonicnext-dev/ffmpeg-core releases "
-				"(the upstream project does not publish one yet - build ffmpeg for arm64-android and publish "
-				"it, or place the zip at ${FFMPEG_ZIP_PATH} so the download step is skipped).")
-		else()
-			message(FATAL_ERROR "No FFMPEG prebuilt found with corresponding commit SHA (${FFMPEG_GIT_SHA})")
-		endif()
-	endif()
-endif()
+		file(DOWNLOAD https://github.com/sonicnext-dev/ffmpeg-core/releases/download/${FFMPEG_GIT_SHA}/${FFMPEG_PREBUILTS_NAME}
+				"${FFMPEG_ZIP_PATH}" SHOW_PROGRESS
+				STATUS FILE_STATUS)
+		list(GET FILE_STATUS 0 STATUS_CODE)
+		if (NOT STATUS_CODE EQUAL 0)
+			file(REMOVE "${FFMPEG_ZIP_PATH}") # CMake create 0 byte file even if URL is invalid. So need to delete it.
+			if (ANDROID)
+				message(FATAL_ERROR "No FFMPEG prebuilt found with corresponding commit SHA (${FFMPEG_GIT_SHA}). "
+					"The Android build needs ffmpeg-android-arm64.zip from the sonicnext-dev/ffmpeg-core releases "
+					"(the upstream project does not publish one yet - build ffmpeg for arm64-android and publish "
+					"it, or place the zip at ${FFMPEG_ZIP_PATH} so the download step is skipped).")
+			else()
+				message(FATAL_ERROR "No FFMPEG prebuilt found with corresponding commit SHA (${FFMPEG_GIT_SHA})")
+			endif()
+		endif ()
+	endif ()
 
-if(NOT FFMPEG_CORE_LOCAL_LIB_DIR)
 	set(FFMPEG_LIB_PATH "${CMAKE_BINARY_DIR}/external/ffmpeg-${FFMPEG_GIT_SHA}/lib")
-	if(NOT EXISTS "${FFMPEG_LIB_PATH}")
+	if (NOT EXISTS "${FFMPEG_LIB_PATH}")
 		file(MAKE_DIRECTORY "${FFMPEG_LIB_PATH}")
 		execute_process(COMMAND ${CMAKE_COMMAND} -E tar xzf "${FFMPEG_ZIP_PATH}"
 			WORKING_DIRECTORY "${FFMPEG_LIB_PATH}")
-	endif()
-endif()
+	endif ()
+endif ()
 
 set(LIB_PREFIX "lib")
 set(LIB_EXT "a")
