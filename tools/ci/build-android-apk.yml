@@ -89,7 +89,16 @@ jobs:
             exit 1
           fi
 
-          yes | "$sdkmanager_bin" --licenses >/dev/null || true
+          # Write the license hashes directly instead of piping 'yes' into
+          # sdkmanager (which can die with "Broken pipe" when it closes stdin).
+          mkdir -p "$sdk_root/licenses"
+          printf '\n893a5cd87b77ab4d135d2055424f66020d172922' > "$sdk_root/licenses/android-sdk-license"
+          printf '\n84831b9409646a918e30573bab4c9c91346d8abd' > "$sdk_root/licenses/android-sdk-preview-license"
+          printf '\n2714b153713551b174f451f15436c3471b6d13a6' > "$sdk_root/licenses/google-tv-license"
+          printf '\n33b6a2b64bc18aa0247651106a24c583f9844f32' > "$sdk_root/licenses/google-gdk-license"
+          printf '\ne9ac305955a40b84d8b30e752e22ca5b4f7ec523' > "$sdk_root/licenses/android-googletv-license"
+          printf '\nmips-android-sysimage-license' > "$sdk_root/licenses/mips-android-sysimage-license"
+
           "$sdkmanager_bin" --install "platforms;android-34" "build-tools;34.0.0" "ndk;${NDK_VERSION}" >/dev/null
           echo "ANDROID_NDK_HOME=$sdk_root/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
 
@@ -111,21 +120,15 @@ jobs:
             echo "::error::Game files are missing. Set the BUILD_FILES_URL repository variable or pass build_files_url to this workflow."; \
             exit 1; }
 
-      # Host tools MUST be built with Clang/lld (the project's toolchains are
-      # clang-based; mixing GNU ld with clang-built archives causes
-      # "file format not recognized"). Compilers are passed to CMake explicitly,
-      # never via environment exports, so every archive is built by the same
-      # compiler and linked by the same linker.
+      # Host tools are built with the project's own clang toolchain file
+      # (toolchains/linux-clang.cmake: clang/clang++, lld, -fPIC) - passing bare
+      # tool names like -DCMAKE_AR=llvm-ar breaks CMake ("llvm-ar: not found"
+      # because it resolves them relative to the build dir, not PATH).
       - name: Build host tools
         run: |
           cmake -S . -B out/build/linux-host-tools -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_C_COMPILER=clang \
-            -DCMAKE_CXX_COMPILER=clang++ \
-            -DCMAKE_AR=llvm-ar \
-            -DCMAKE_NM=llvm-nm \
-            -DCMAKE_RANLIB=llvm-ranlib \
-            -DCMAKE_LINKER=ld.lld \
+            -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/toolchains/linux-clang.cmake" \
             -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF \
             -DMARATHON_RECOMP_HOST_TOOLS_ONLY=ON
           cmake --build out/build/linux-host-tools --target XenonRecomp XenosRecomp file_to_c u8extract -j2
