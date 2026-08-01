@@ -120,12 +120,17 @@ jobs:
             echo "::error::Game files are missing. Set the BUILD_FILES_URL repository variable or pass build_files_url to this workflow."; \
             exit 1; }
 
-      # Host tools are built with the project's own clang toolchain file
-      # (toolchains/linux-clang.cmake: clang/clang++, lld, -fPIC) - passing bare
-      # tool names like -DCMAKE_AR=llvm-ar breaks CMake ("llvm-ar: not found"
-      # because it resolves them relative to the build dir, not PATH).
+      # Host tools MUST be built with Clang/lld (the project's toolchains are
+      # clang-based; mixing GNU ld with clang-built archives causes
+      # "file format not recognized"). Compilers are passed to CMake explicitly,
+      # never via environment exports, so every archive is built by the same
+      # compiler and linked by the same linker.
       - name: Build host tools
         run: |
+          # Host tools are built with the project's own clang toolchain file
+          # (toolchains/linux-clang.cmake: clang/clang++, lld, -fPIC) - passing bare
+          # tool names like -DCMAKE_AR=llvm-ar breaks CMake ("llvm-ar: not found"
+          # because it resolves them relative to the build dir, not PATH).
           cmake -S . -B out/build/linux-host-tools -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/toolchains/linux-clang.cmake" \
