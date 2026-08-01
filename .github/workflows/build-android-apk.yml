@@ -1,24 +1,14 @@
 # Build Android APK - GitHub Actions workflow (no secrets anywhere).
 #
-# NOTE ON LOCATION: GitHub only auto-runs workflows that live in
-# .github/workflows/. This copy is kept in tools/ci/ so it can be versioned and
-# pushed without the GitHub App needing the "Workflows" permission. To activate
-# it in your repository, copy it to .github/workflows/build-android-apk.yml
-# (GitHub UI: Add file -> Upload, or locally once you have push access), then
-# run it from the Actions tab.
-#
 # Everything is automatic:
 #   - game files come from a PUBLIC URL you control (Google Drive / HuggingFace);
 #     the zip only needs default.xex, shader.arc, shader_lt.arc
-#   - all git submodules are initialized automatically
-#   - ffmpeg for Android (with the XMA decoder) is built automatically from
-#     source; no prebuilt ffmpeg zip is required
-#   - bundled Turnip drivers are optional: drop drivers/*.so into the zip to
-#     include them, or the app uses the system Vulkan driver
+#   - all git submodules (incl. nested) are initialized automatically
+#   - ffmpeg for Android (with the XMA decoder) is built automatically from source
+#   - bundled Turnip drivers are optional: drop drivers/*.so into the zip
 #
 # Set the URL either per-run (Actions -> Run workflow -> build_files_url) or once
-# as the repository variable BUILD_FILES_URL (Settings -> Secrets and variables
-# -> Actions -> Variables).
+# as the repository variable BUILD_FILES_URL.
 
 name: Build Android APK
 
@@ -54,8 +44,6 @@ jobs:
         with:
           fetch-depth: 1
 
-      # Everything is fetched automatically; the loop just makes transient
-      # network failures retry instead of killing the run.
       - name: Checkout submodules (automatic)
         run: |
           for attempt in 1 2 3; do
@@ -83,9 +71,11 @@ jobs:
       - name: Install build tools
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq ninja-build unzip patch
+          sudo apt-get install -y -qq ninja-build unzip patch lld
           cmake --version
           ninja --version
+          clang --version | head -1
+          ld.lld --version | head -1
 
       - name: Set up Android SDK / NDK
         run: |
@@ -99,41 +89,21 @@ jobs:
             exit 1
           fi
 
-          # Официальный и самый стабильный способ принять лицензии в CI/CD без утилиты 'yes'
-          mkdir -p "$sdk_root/licenses"
-          echo -e "\n893a5cd87b77ab4d135d2055424f66020d172922" > "$sdk_root/licenses/android-sdk-license"
-          echo -e "\n84831b9409646a918e30573bab4c9c91346d8abd" > "$sdk_root/licenses/android-sdk-preview-license"
-          echo -e "\n2714b153713551b174f451f15436c3471b6d13a6" > "$sdk_root/licenses/google-tv-license"
-          echo -e "\n33b6a2b64bc18aa0247651106a24c583f9844f32" > "$sdk_root/licenses/google-gdk-license"
-          echo -e "\ne9ac305955a40b84d8b30e752e22ca5b4f7ec523" > "$sdk_root/licenses/android-googletv-license"
-          echo -e "\nmips-android-sysimage-license" > "$sdk_root/licenses/mips-android-sysimage-license"
-
-          # Установка компонентов (флаг --no_https может помочь стабильности в некоторых окружениях)
+          yes | "$sdkmanager_bin" --licenses >/dev/null || true
           "$sdkmanager_bin" --install "platforms;android-34" "build-tools;34.0.0" "ndk;${NDK_VERSION}" >/dev/null
-          
           echo "ANDROID_NDK_HOME=$sdk_root/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
-
 
       - name: Fetch game files
         if: env.BUILD_FILES_URL != ''
         run: |
           bash tools/ci/fetch_build_files.sh "$BUILD_FILES_URL" "$GITHUB_WORKSPACE/ci-build-files"
           mkdir -p MarathonRecompLib/private
-          
-          # Копирование основных файлов игры
           cp ci-build-files/game/default.xex MarathonRecompLib/private/default.xex
           cp ci-build-files/game/shader.arc MarathonRecompLib/private/shader.arc
           cp ci-build-files/game/shader_lt.arc MarathonRecompLib/private/shader_lt.arc
-          
-          # Копирование папки shader со всем содержимым в private/shader
-          if [ -d "ci-build-files/game/shader" ]; then
-            cp -r ci-build-files/game/shader MarathonRecompLib/private/
-          fi
-          
           if ls ci-build-files/drivers/*.so >/dev/null 2>&1; then
             cp ci-build-files/drivers/*.so android-apk/app/src/main/assets/bundled_driver/
           fi
-
 
       - name: Fail early if game files are missing
         run: |
@@ -141,23 +111,25 @@ jobs:
             echo "::error::Game files are missing. Set the BUILD_FILES_URL repository variable or pass build_files_url to this workflow."; \
             exit 1; }
 
+      # Host tools MUST be built with Clang/lld (the project's toolchains are
+      # clang-based; mixing GNU ld with clang-built archives causes
+      # "file format not recognized"). Compilers are passed to CMake explicitly,
+      # never via environment exports, so every archive is built by the same
+      # compiler and linked by the same linker.
       - name: Build host tools
         run: |
-          # Полностью переключаем окружение на Clang и отключаем LTO для утилит хоста
-          export CC=clang
-          export CXX=clang++
-          export AR=llvm-ar
-          export NM=llvm-nm
-          export RANLIB=llvm-ranlib
-          
           cmake -S . -B out/build/linux-host-tools -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
-            -DMARATHON_RECOMP_HOST_TOOLS_ONLY=ON \
-            -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF
-            
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_AR=llvm-ar \
+            -DCMAKE_NM=llvm-nm \
+            -DCMAKE_RANLIB=llvm-ranlib \
+            -DCMAKE_LINKER=ld.lld \
+            -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF \
+            -DMARATHON_RECOMP_HOST_TOOLS_ONLY=ON
           cmake --build out/build/linux-host-tools --target XenonRecomp XenosRecomp file_to_c u8extract -j2
-
-
+          ls -la out/build/linux-host-tools/tools/XenonRecomp/XenonRecomp/XenonRecomp
 
       - name: Build ffmpeg for Android (automatic)
         run: |
