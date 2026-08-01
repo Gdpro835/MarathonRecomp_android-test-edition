@@ -99,16 +99,20 @@ jobs:
             exit 1
           fi
 
-          # Исправленный вариант принятия лицензий без Broken pipe
-          echo "y" | "$sdkmanager_bin" --licenses >/dev/null || true
+          # Официальный и самый стабильный способ принять лицензии в CI/CD без утилиты 'yes'
+          mkdir -p "$sdk_root/licenses"
+          echo -e "\n893a5cd87b77ab4d135d2055424f66020d172922" > "$sdk_root/licenses/android-sdk-license"
+          echo -e "\n84831b9409646a918e30573bab4c9c91346d8abd" > "$sdk_root/licenses/android-sdk-preview-license"
+          echo -e "\n2714b153713551b174f451f15436c3471b6d13a6" > "$sdk_root/licenses/google-tv-license"
+          echo -e "\n33b6a2b64bc18aa0247651106a24c583f9844f32" > "$sdk_root/licenses/google-gdk-license"
+          echo -e "\ne9ac305955a40b84d8b30e752e22ca5b4f7ec523" > "$sdk_root/licenses/android-googletv-license"
+          echo -e "\nmips-android-sysimage-license" > "$sdk_root/licenses/mips-android-sysimage-license"
+
+          # Установка компонентов (флаг --no_https может помочь стабильности в некоторых окружениях)
+          "$sdkmanager_bin" --install "platforms;android-34" "build-tools;34.0.0" "ndk;${NDK_VERSION}" >/dev/null
           
-          "$sdkmanager_bin" --install "platforms;android-34" "build-tools;34.0.0" "ndk;${NDK_VERSION}" >/dev/null
           echo "ANDROID_NDK_HOME=$sdk_root/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
 
-
-          yes | "$sdkmanager_bin" --licenses >/dev/null || true
-          "$sdkmanager_bin" --install "platforms;android-34" "build-tools;34.0.0" "ndk;${NDK_VERSION}" >/dev/null
-          echo "ANDROID_NDK_HOME=$sdk_root/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
 
       - name: Fetch game files
         if: env.BUILD_FILES_URL != ''
@@ -139,14 +143,20 @@ jobs:
 
       - name: Build host tools
         run: |
-          # Принудительно используем Clang для сборки инструментов хоста
+          # Полностью переключаем окружение на Clang и отключаем LTO для утилит хоста
           export CC=clang
           export CXX=clang++
+          export AR=llvm-ar
+          export NM=llvm-nm
+          export RANLIB=llvm-ranlib
           
           cmake -S . -B out/build/linux-host-tools -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
-            -DMARATHON_RECOMP_HOST_TOOLS_ONLY=ON
+            -DMARATHON_RECOMP_HOST_TOOLS_ONLY=ON \
+            -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF
+            
           cmake --build out/build/linux-host-tools --target XenonRecomp XenosRecomp file_to_c u8extract -j2
+
 
 
       - name: Build ffmpeg for Android (automatic)
