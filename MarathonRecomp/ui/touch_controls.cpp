@@ -301,7 +301,7 @@ namespace
             st.wButtons |= bit;
 
         dl->AddCircleFilled(c, r * 1.25f, IM_COL32(0, 0, 0, pressed ? 120 : 70), 32);
-        DrawGlyph(dl, c, r, r, icon, pressed ? 255 : 210); // icon is a label string
+        DrawGlyph(dl, c, r, r, label, pressed ? 255 : 210);
     }
 
     // Wide button (shoulders/triggers/start/back): rounded backing + glyph.
