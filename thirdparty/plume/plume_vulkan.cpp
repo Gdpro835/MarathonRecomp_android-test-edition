@@ -4550,6 +4550,10 @@ namespace plume {
         // MarathonRecomp/os/android/vulkan_driver_android.cpp; returns nullptr
         // (meaning: use the normal loader) if no custom driver is selected.
         extern "C" void *AndroidGetCustomVulkanLoader();
+#endif
+
+        VkResult res = VK_SUCCESS;
+#if defined(__ANDROID__)
         void *customLoader = AndroidGetCustomVulkanLoader();
         if (customLoader != nullptr) {
             volkInitializeCustom(reinterpret_cast<PFN_vkGetInstanceProcAddr>(customLoader));
@@ -4557,7 +4561,7 @@ namespace plume {
         else
 #endif
         {
-            VkResult res = volkInitialize();
+            res = volkInitialize();
             if (res != VK_SUCCESS) {
                 fprintf(stderr, "volkInitialize failed with error code 0x%X.\n", res);
                 return;
