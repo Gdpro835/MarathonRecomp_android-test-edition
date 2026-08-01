@@ -782,6 +782,25 @@ static void ProcessDriverImportDir(const std::filesystem::path &turnipDir)
             "available through the launcher's log button.\n");
         ScanDriverImportDir(mediaImportDir, turnipDir);
     }
+
+    // Third location: <game root>/driver_import - the folder users see when they
+    // open "Game folder" from the launcher, so dropping a driver next to the game
+    // files also works.
+    const std::filesystem::path &dataRoot = os::android::GetDataRoot();
+    if (!dataRoot.empty())
+    {
+        std::filesystem::path gameImportDir = dataRoot / "driver_import";
+        std::filesystem::create_directories(gameImportDir, ec);
+        WriteTextFile(gameImportDir / "readme.txt",
+            "Optional: drop a Vulkan driver here as a plain .so file or as a whole\n"
+            "driver-package .zip (AdrenoTools/ExynosTools format). This folder is\n"
+            "scanned on launch exactly like the other driver_import/ folders;\n"
+            "processed files move to the installed/ subfolder. See the readme.txt\n"
+            "in Android/data/<app>/files/driver_import/ for TU_DEBUG and capture\n"
+            "options. The log file (log.txt) is available through the launcher's\n"
+            "log button.\n");
+        ScanDriverImportDir(gameImportDir, turnipDir);
+    }
 }
 
 // Provision the app-owned bundled-driver slots. A different imported driver remains selected
@@ -1233,6 +1252,19 @@ void *AndroidGetCustomVulkanLoader()
     ApplyRenderMode(effectiveRenderMode, driverTuDebugPreset == nullptr, driverTuDebugPreset);
     ApplyLayerSettingsOverride(turnipDir);
 
+    // The adrenotools hooks (main_hook, file_redirect_hook, gsl_alloc_hook,
+    // hook_impl) are dlopened from nativeLibraryDir; log whether they are
+    // actually packaged, otherwise "adrenotools_open_libvulkan failed" is
+    // impossible to diagnose.
+    for (const char *hook : { "libmain_hook.so", "libfile_redirect_hook.so",
+                              "libgsl_alloc_hook.so", "libhook_impl.so" })
+    {
+        std::string hookPath = nativeLibraryDir + hook;
+        struct stat hookStat {};
+        if (stat(hookPath.c_str(), &hookStat) != 0)
+            LOGF_WARNING("adrenotools hook missing from nativeLibraryDir: {}", hookPath);
+    }
+
     void *libVulkan = adrenotools_open_libvulkan(
         RTLD_NOW | RTLD_LOCAL,
         ADRENOTOOLS_DRIVER_CUSTOM,
@@ -1246,6 +1278,8 @@ void *AndroidGetCustomVulkanLoader()
     if (libVulkan == nullptr)
     {
         LOG_ERROR("adrenotools_open_libvulkan failed, falling back to the default Vulkan driver.");
+        LOGF_ERROR("Selected custom driver: {} (turnipDir={}, nativeLibraryDir={}).",
+            driverName, turnipDir, nativeLibraryDir);
         return nullptr;
     }
 

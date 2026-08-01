@@ -421,6 +421,21 @@ if (ANDROID)
     )
 
     target_link_libraries(MarathonRecomp PRIVATE adrenotools)
+
+    # libadrenotools builds its hooks as separate shared libraries which
+    # adrenotools_open_libvulkan() dlopens from the app's nativeLibraryDir at
+    # runtime. Copy them next to libmain.so so the APK packaging step can pick
+    # them up (the workflow copies every *.so from this directory into
+    # jniLibs/arm64-v8a/).
+    add_custom_command(TARGET MarathonRecomp POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:main_hook>"
+            "$<TARGET_FILE:file_redirect_hook>"
+            "$<TARGET_FILE:gsl_alloc_hook>"
+            "$<TARGET_FILE:hook_impl>"
+            "$<TARGET_FILE_DIR:MarathonRecomp>"
+        COMMENT "Copying adrenotools hook libraries next to libmain.so"
+    )
 endif()
 
 find_package(CURL REQUIRED)

@@ -64,8 +64,10 @@ final class AppStorage {
     /** All folders the native side scans for dropped drivers, primary first. */
     static File[] driverImportDirs(Context context) {
         File media = mediaBase(context);
+        File gameRoot = activeGameRoot(context);
         return media != null
-            ? new File[] { driverImportDir(context), new File(media, "driver_import") }
-            : new File[] { driverImportDir(context) };
+            ? new File[] { driverImportDir(context), new File(media, "driver_import"),
+                new File(gameRoot, "driver_import") }
+            : new File[] { driverImportDir(context), new File(gameRoot, "driver_import") };
     }
 }

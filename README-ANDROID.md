@@ -156,6 +156,26 @@ with the exact names from `MarathonRecomp/os/android/vulkan_driver_android.cpp`
 (`vulkan.marathon_a732.so`, `vulkan.vauzi710_v2_7.so`, `vulkan.wb26_2_rp_pair_ccu_color_a725.so`)
 before step 5 so they are packaged into the APK.
 
+## Installing a custom Vulkan driver (Turnip)
+
+The app imports a custom driver (e.g. a Mesa Turnip build) from **any** of these
+folders — drop a plain `.so` (like `libvulkan_freedreno.so`) or an
+AdrenoTools/ExynosTools package `.zip` into one of them and relaunch the game:
+
+1. `Android/data/<app>/files/driver_import/` (launcher's **Driver folder** button)
+2. `Android/media/<app>/driver_import/` (browsable by on-device file managers)
+3. `<game root>/driver_import/` (next to your game files, opened via **Open game folder**)
+
+Processed packages move to `installed/` and are selected automatically. See the
+`readme.txt` written into each folder for TU_DEBUG / capture options.
+
+> The debug APK must contain the libadrenotools hook libraries
+> (`libmain_hook.so`, `libfile_redirect_hook.so`, `libgsl_alloc_hook.so`,
+> `libhook_impl.so`) for driver loading to work — the CI workflow packages them
+> next to `libmain.so` automatically. If the log shows
+> `adrenotools hook missing from nativeLibraryDir`, the APK was built by an
+> older workflow; rebuild with the current `tools/ci/build-android-apk.yml`.
+
 ## Configuration
 
 - The launcher exposes the Vulkan driver, Turnip render mode, skip-intro and diagnostic options.
