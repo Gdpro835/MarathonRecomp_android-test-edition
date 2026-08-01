@@ -25,6 +25,11 @@ api="29"
 work="$outdir/.work"
 mkdir -p "$work" "$outdir/lib"
 
+# Always rebuild from scratch: a previous run may have produced non-PIC
+# archives (the NEON asm needs explicit -fPIC to link into libmain.so).
+rm -rf "$work" "$outdir/lib"
+mkdir -p "$work" "$outdir/lib"
+
 if [ ! -x "$bin/aarch64-linux-android${api}-clang" ]; then
     echo "ERROR: NDK clang not found at $bin/aarch64-linux-android${api}-clang" >&2
     exit 1
@@ -66,6 +71,7 @@ cd "$src"
     --enable-static --disable-shared \
     --disable-programs --disable-doc --disable-autodetect \
     --enable-pic --enable-runtime-cpudetect \
+    --extra-cflags="-fPIC" \
     --disable-network --disable-iconv \
     --disable-everything --enable-decoder=xmaframes
 echo "::endgroup::"
