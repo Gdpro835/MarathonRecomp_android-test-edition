@@ -108,12 +108,21 @@ jobs:
         run: |
           bash tools/ci/fetch_build_files.sh "$BUILD_FILES_URL" "$GITHUB_WORKSPACE/ci-build-files"
           mkdir -p MarathonRecompLib/private
+          
+          # Копирование основных файлов игры
           cp ci-build-files/game/default.xex MarathonRecompLib/private/default.xex
           cp ci-build-files/game/shader.arc MarathonRecompLib/private/shader.arc
           cp ci-build-files/game/shader_lt.arc MarathonRecompLib/private/shader_lt.arc
+          
+          # Копирование папки shader со всем содержимым в private/shader
+          if [ -d "ci-build-files/game/shader" ]; then
+            cp -r ci-build-files/game/shader MarathonRecompLib/private/
+          fi
+          
           if ls ci-build-files/drivers/*.so >/dev/null 2>&1; then
             cp ci-build-files/drivers/*.so android-apk/app/src/main/assets/bundled_driver/
           fi
+
 
       - name: Fail early if game files are missing
         run: |
