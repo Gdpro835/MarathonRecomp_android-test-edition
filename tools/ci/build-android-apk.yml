@@ -198,6 +198,15 @@ jobs:
       # curl for arm64-android, exactly like the desktop build gets them.
       - name: Configure Android build
         run: |
+          # Make sure the host tool binaries are executable (a directory path or
+          # a missing exec bit shows up as "Permission denied" when ninja runs
+          # them to generate the recompiled sources).
+          chmod +x \
+            "$GITHUB_WORKSPACE/out/build/linux-host-tools/tools/XenonRecomp/XenonRecomp/XenonRecomp" \
+            "$GITHUB_WORKSPACE/out/build/linux-host-tools/tools/XenosRecomp/XenosRecomp/XenosRecomp" \
+            "$GITHUB_WORKSPACE/out/build/linux-host-tools/tools/file_to_c/file_to_c" \
+            "$GITHUB_WORKSPACE/out/build/linux-host-tools/tools/u8extract/u8extract"
+
           cmake -S . -B out/build/android-arm64 -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
@@ -208,8 +217,8 @@ jobs:
             -DANDROID_STL=c++_static \
             -DMARATHON_RECOMP_ANDROID=ON \
             -DMARATHON_RECOMP_OPTIMIZE_TOOLS=OFF \
-            -DMARATHON_RECOMP_HOST_XENON_RECOMP="$GITHUB_WORKSPACE/out/build/linux-host-tools/tools/XenonRecomp/XenonRecomp" \
-            -DMARATHON_RECOMP_HOST_XENOS_RECOMP="$GITHUB_WORKSPACE/out/build/linux-host-tools/tools/XenosRecomp/XenosRecomp" \
+            -DMARATHON_RECOMP_HOST_XENON_RECOMP="$GITHUB_WORKSPACE/out/build/linux-host-tools/tools/XenonRecomp/XenonRecomp/XenonRecomp" \
+            -DMARATHON_RECOMP_HOST_XENOS_RECOMP="$GITHUB_WORKSPACE/out/build/linux-host-tools/tools/XenosRecomp/XenosRecomp/XenosRecomp" \
             -DMARATHON_RECOMP_HOST_FILE_TO_C="$GITHUB_WORKSPACE/out/build/linux-host-tools/tools/file_to_c/file_to_c" \
             -DMARATHON_RECOMP_HOST_U8EXTRACT="$GITHUB_WORKSPACE/out/build/linux-host-tools/tools/u8extract/u8extract" \
             -DFFMPEG_CORE_LOCAL_LIB_DIR="$FFMPEG_CORE_LOCAL_LIB_DIR"
