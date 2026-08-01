@@ -1,24 +1,14 @@
 # Build Android APK - GitHub Actions workflow (no secrets anywhere).
 #
-# NOTE ON LOCATION: GitHub only auto-runs workflows that live in
-# .github/workflows/. This copy is kept in tools/ci/ so it can be versioned and
-# pushed without the GitHub App needing the "Workflows" permission. To activate
-# it in your repository, copy it to .github/workflows/build-android-apk.yml
-# (GitHub UI: Add file -> Upload, or locally once you have push access), then
-# run it from the Actions tab.
-#
 # Everything is automatic:
 #   - game files come from a PUBLIC URL you control (Google Drive / HuggingFace);
 #     the zip only needs default.xex, shader.arc, shader_lt.arc
-#   - all git submodules are initialized automatically
-#   - ffmpeg for Android (with the XMA decoder) is built automatically from
-#     source; no prebuilt ffmpeg zip is required
-#   - bundled Turnip drivers are optional: drop drivers/*.so into the zip to
-#     include them, or the app uses the system Vulkan driver
+#   - all git submodules (incl. nested) are initialized automatically
+#   - ffmpeg for Android (with the XMA decoder) is built automatically from source
+#   - bundled Turnip drivers are optional: drop drivers/*.so into the zip
 #
 # Set the URL either per-run (Actions -> Run workflow -> build_files_url) or once
-# as the repository variable BUILD_FILES_URL (Settings -> Secrets and variables
-# -> Actions -> Variables).
+# as the repository variable BUILD_FILES_URL.
 
 name: Build Android APK
 
@@ -54,8 +44,6 @@ jobs:
         with:
           fetch-depth: 1
 
-      # Everything is fetched automatically; the loop just makes transient
-      # network failures retry instead of killing the run.
       - name: Checkout submodules (automatic)
         run: |
           for attempt in 1 2 3; do
@@ -83,9 +71,11 @@ jobs:
       - name: Install build tools
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq ninja-build unzip patch
+          sudo apt-get install -y -qq ninja-build unzip patch lld
           cmake --version
           ninja --version
+          clang --version | head -1
+          ld.lld --version | head -1
 
       - name: Set up Android SDK / NDK
         run: |
@@ -121,12 +111,25 @@ jobs:
             echo "::error::Game files are missing. Set the BUILD_FILES_URL repository variable or pass build_files_url to this workflow."; \
             exit 1; }
 
+      # Host tools MUST be built with Clang/lld (the project's toolchains are
+      # clang-based; mixing GNU ld with clang-built archives causes
+      # "file format not recognized"). Compilers are passed to CMake explicitly,
+      # never via environment exports, so every archive is built by the same
+      # compiler and linked by the same linker.
       - name: Build host tools
         run: |
           cmake -S . -B out/build/linux-host-tools -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_AR=llvm-ar \
+            -DCMAKE_NM=llvm-nm \
+            -DCMAKE_RANLIB=llvm-ranlib \
+            -DCMAKE_LINKER=ld.lld \
+            -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF \
             -DMARATHON_RECOMP_HOST_TOOLS_ONLY=ON
           cmake --build out/build/linux-host-tools --target XenonRecomp XenosRecomp file_to_c u8extract -j2
+          ls -la out/build/linux-host-tools/tools/XenonRecomp/XenonRecomp/XenonRecomp
 
       - name: Build ffmpeg for Android (automatic)
         run: |
