@@ -15,3 +15,11 @@ void os::logger::Log(const std::string_view str, ELogType type, const char* func
         fmt::println("{}", str);
     }
 }
+
+void os::logger::Heartbeat()
+{
+}
+
+void os::logger::SetWatchdogSuspended(bool suspended)
+{
+}

@@ -1,6 +1,7 @@
 #include <api/Marathon.h>
 #include <kernel/memory.h>
 #include <ui/options_menu.h>
+#include <ui/touch_controls.h>
 
 void AddPauseMenuItem
 (
@@ -69,6 +70,10 @@ PPC_FUNC_IMPL(__imp__sub_82509870);
 PPC_FUNC(sub_82509870)
 {
     auto pPauseTask = (Sonicteam::PauseTask*)(base + ctx.r3.u32);
+
+#ifdef __ANDROID__
+    TouchControls::NotifyMenuVisible();
+#endif
 
     static bool s_isReturningFromOptionsMenu{};
 

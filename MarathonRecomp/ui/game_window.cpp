@@ -160,6 +160,26 @@ void GameWindow::Init(const char* sdlVideoDriver)
     SDL_SetHint("SDL_APP_ID", "io.github.sonicnext_dev.marathonrecomp");
 #endif
 
+#ifdef __ANDROID__
+    // Non-blocking pump: with "1", SDL_PumpEvents parks the calling thread inside SDL's
+    // resume semaphore while paused. Its pause/resume credit handshake misfires in this
+    // app (multiple threads pump, nobody drains the event queue), which delivered spurious
+    // resumes 40 ms after backgrounding. The game freeze is our own instead: the tick in
+    // app.cpp blocks while the native window is gone (surface state is the authority).
+    SDL_SetHint(SDL_HINT_ANDROID_BLOCK_ON_PAUSE, "0");
+    // Audio pausing rides the same misfiring handshake; our Marathon_AppSetPaused
+    // (sdl2_driver.cpp) pauses/resumes audio deterministically instead.
+    SDL_SetHint(SDL_HINT_ANDROID_BLOCK_ON_PAUSE_PAUSEAUDIO, "0");
+
+    // Without this, SDL_androidwindow.c's Android_JNI_SetOrientation() call (fired during
+    // SDL_CreateWindow() below) passes an empty orientation hint. Since the window is also
+    // created with SDL_WINDOW_RESIZABLE (see GetWindowFlags()), SDLActivity.setOrientationBis()
+    // then falls through to SCREEN_ORIENTATION_FULL_USER - i.e. it defers entirely to the
+    // phone's own rotation lock/sensor state - overriding the AndroidManifest.xml
+    // android:screenOrientation declaration at runtime instead of forcing landscape.
+    SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
+#endif
+
     if (SDL_VideoInit(sdlVideoDriver) != 0 && sdlVideoDriver)
     {
         LOGFN_ERROR("Failed to initialise the SDL video driver: \"{}\". Falling back to default.", sdlVideoDriver);
@@ -212,6 +232,8 @@ void GameWindow::Init(const char* sdlVideoDriver)
         DWM_WINDOW_CORNER_PREFERENCE wcp = DWMWCP_DONOTROUND;
         DwmSetWindowAttribute(s_renderWindow, DWMWA_WINDOW_CORNER_PREFERENCE, &wcp, sizeof(wcp));
     }
+#elif defined(__ANDROID__)
+    s_renderWindow = info.info.android.window;
 #elif defined(PLUME_SDL_VULKAN_ENABLED)
     s_renderWindow = s_pWindow;
 #elif defined(__linux__)
@@ -227,6 +249,19 @@ void GameWindow::Init(const char* sdlVideoDriver)
 
     SDL_ShowWindow(s_pWindow);
 }
+
+#ifdef __ANDROID__
+plume::RenderWindow GameWindow::GetAndroidNativeWindow()
+{
+    SDL_SysWMinfo info;
+    SDL_VERSION(&info.version);
+
+    if (s_pWindow == nullptr || SDL_GetWindowWMInfo(s_pWindow, &info) != SDL_TRUE)
+        return nullptr;
+
+    return info.info.android.window;
+}
+#endif
 
 void GameWindow::Update()
 {
@@ -439,7 +474,9 @@ uint32_t GameWindow::GetWindowFlags()
     if (Config::Fullscreen)
         flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
 
-#ifdef PLUME_SDL_VULKAN_ENABLED
+#if defined(PLUME_SDL_VULKAN_ENABLED) || defined(__ANDROID__)
+    // PLUME_SDL_VULKAN_ENABLED is only set for desktop Linux by thirdparty/CMakeLists.txt;
+    // Android needs the Vulkan window flag too, so check __ANDROID__ directly here.
     flags |= SDL_WINDOW_VULKAN;
 #endif
 

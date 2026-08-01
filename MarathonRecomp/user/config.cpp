@@ -385,6 +385,45 @@ CONFIG_DEFINE_ENUM_TEMPLATE(EUIAlignmentMode)
     { "Center",  EUIAlignmentMode::Centre }
 };
 
+#ifdef __ANDROID__
+CONFIG_DEFINE_ENUM_TEMPLATE(EAndroidTouchControlsPolicy)
+{
+    { "Auto",      EAndroidTouchControlsPolicy::Auto },
+    { "Always On", EAndroidTouchControlsPolicy::AlwaysOn },
+    { "Off",       EAndroidTouchControlsPolicy::Off }
+};
+
+CONFIG_DEFINE_ENUM_TEMPLATE(EAndroidTouchCameraMode)
+{
+    { "Touch Area",  EAndroidTouchCameraMode::TouchArea },
+    { "Right Stick", EAndroidTouchCameraMode::RightStick },
+    { "Off",         EAndroidTouchCameraMode::Off }
+};
+
+CONFIG_DEFINE_ENUM_TEMPLATE(EAndroidTouchStickMode)
+{
+    { "Analog", EAndroidTouchStickMode::Analog },
+    { "D-Pad",  EAndroidTouchStickMode::Dpad }
+};
+
+CONFIG_DEFINE_ENUM_TEMPLATE(EAndroidVulkanDriver)
+{
+    { "Auto",     EAndroidVulkanDriver::Auto },
+    { "System",   EAndroidVulkanDriver::System },
+    { "Bundled",  EAndroidVulkanDriver::Bundled },
+    { "Imported", EAndroidVulkanDriver::Imported },
+    { "Vauzi710", EAndroidVulkanDriver::Vauzi710 },
+    { "ExperimentalA725", EAndroidVulkanDriver::ExperimentalA725 }
+};
+
+CONFIG_DEFINE_ENUM_TEMPLATE(EAndroidRenderMode)
+{
+    { "Auto",   EAndroidRenderMode::Auto },
+    { "GMEM",   EAndroidRenderMode::GMEM },
+    { "Sysmem", EAndroidRenderMode::Sysmem }
+};
+#endif
+
 #undef  CONFIG_DEFINE
 #define CONFIG_DEFINE(section, type, name, defaultValue, requiresRestart) \
     ConfigDef<type> Config::name{section, #name, defaultValue, requiresRestart};

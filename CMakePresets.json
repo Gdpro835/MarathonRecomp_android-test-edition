@@ -165,6 +165,38 @@
                 "CMAKE_BUILD_TYPE": "Release",
                 "CMAKE_INTERPROCEDURAL_OPTIMIZATION": true
             }
+        },
+        {
+            "name": "linux-host-tools",
+            "displayName": "Linux host tools (for cross-compiling)",
+            "inherits": "linux-base",
+            "binaryDir": "${sourceDir}/out/build/linux-host-tools",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "MARATHON_RECOMP_HOST_TOOLS_ONLY": "ON"
+            }
+        },
+        {
+            "name": "android-release",
+            "displayName": "Android (arm64-v8a) release",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/out/build/android-arm64",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_TOOLCHAIN_FILE": {
+                    "value": "$env{ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake",
+                    "type": "FILEPATH"
+                },
+                "ANDROID_ABI": "arm64-v8a",
+                "ANDROID_PLATFORM": "android-29",
+                "ANDROID_STL": "c++_static",
+                "MARATHON_RECOMP_ANDROID": "ON",
+                "MARATHON_RECOMP_D3D12": "OFF",
+                "MARATHON_RECOMP_HOST_XENON_RECOMP": "${sourceDir}/out/build/linux-host-tools/tools/XenonRecomp/XenonRecomp",
+                "MARATHON_RECOMP_HOST_XENOS_RECOMP": "${sourceDir}/out/build/linux-host-tools/tools/XenosRecomp/XenosRecomp",
+                "MARATHON_RECOMP_HOST_FILE_TO_C": "${sourceDir}/out/build/linux-host-tools/tools/file_to_c/file_to_c",
+                "MARATHON_RECOMP_HOST_U8EXTRACT": "${sourceDir}/out/build/linux-host-tools/tools/u8extract/u8extract"
+            }
         }
     ]
 }

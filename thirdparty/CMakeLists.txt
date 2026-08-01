@@ -15,7 +15,7 @@ set(SDL2MIXER_OPUS OFF)
 set(SDL2MIXER_VORBIS "VORBISFILE")
 set(SDL2MIXER_WAVPACK OFF)
 
-if (CMAKE_SYSTEM_NAME MATCHES "Linux")
+if (CMAKE_SYSTEM_NAME MATCHES "Linux" OR ANDROID)
     set(PLUME_SDL_VULKAN_ENABLED ON CACHE BOOL "")
 endif()
 
@@ -41,12 +41,25 @@ else()
 endif()
 
 add_subdirectory("${MARATHON_RECOMP_THIRDPARTY_ROOT}/msdf-atlas-gen")
-add_subdirectory("${MARATHON_RECOMP_THIRDPARTY_ROOT}/nativefiledialog-extended")
+
+# The GUI installer wizard (and its native file picker dependency) is not built for
+# Android; game files are pushed manually instead. See main.cpp __ANDROID__ guards.
+if (NOT ANDROID)
+    add_subdirectory("${MARATHON_RECOMP_THIRDPARTY_ROOT}/nativefiledialog-extended")
+endif()
+
 add_subdirectory("${MARATHON_RECOMP_THIRDPARTY_ROOT}/o1heap")
 add_subdirectory("${MARATHON_RECOMP_THIRDPARTY_ROOT}/SDL")
 add_subdirectory("${MARATHON_RECOMP_THIRDPARTY_ROOT}/SDL_mixer")
 add_subdirectory("${MARATHON_RECOMP_THIRDPARTY_ROOT}/plume")
 add_subdirectory("${MARATHON_RECOMP_THIRDPARTY_ROOT}/ffmpeg-core")
+
+# Allows loading a custom Vulkan driver (Mesa Turnip) instead of the vendor
+# proprietary blob, to work around driver-side issues seen with this engine's
+# buffer_device_address-based bindless resource access. See vulkan_driver_android.cpp.
+if (ANDROID)
+    add_subdirectory("${MARATHON_RECOMP_THIRDPARTY_ROOT}/libadrenotools")
+endif()
 
 if (APPLE)
     add_subdirectory("${MARATHON_RECOMP_THIRDPARTY_ROOT}/MoltenVK")

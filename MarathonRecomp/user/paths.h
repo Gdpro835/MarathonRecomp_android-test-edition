@@ -2,6 +2,10 @@
 
 #include <mod/mod_loader.h>
 
+#ifdef __ANDROID__
+#include <os/android/storage_android.h>
+#endif
+
 #define USER_DIRECTORY "MarathonRecomp"
 
 #ifndef GAME_INSTALL_DIRECTORY
@@ -17,7 +21,11 @@ const std::filesystem::path& GetUserPath();
 
 inline std::filesystem::path GetGamePath()
 {
-#ifdef __APPLE__
+#ifdef __ANDROID__
+    // Resolved at runtime: legacy adb-pushed internal install if present, otherwise
+    // app-specific external storage that users can populate from a PC without root.
+    return os::android::GetDataRoot();
+#elif defined(__APPLE__)
     // On macOS, there is the expectation that the app may be installed to
     // /Applications/, and the bundle should not be modified. Thus we need
     // to install game files to the user directory instead of next to the app.

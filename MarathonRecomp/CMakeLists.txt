@@ -31,9 +31,17 @@ function(BIN2C)
         set(BIN2C_ARGS_COMPRESSION_TYPE "none")
     endif()
 
+    if (MARATHON_RECOMP_USE_PREBUILT_HOST_TOOLS)
+        set(MARATHON_RECOMP_FILE_TO_C_COMMAND "${MARATHON_RECOMP_HOST_FILE_TO_C}")
+        set(MARATHON_RECOMP_FILE_TO_C_TOOL_DEPENDS "${MARATHON_RECOMP_HOST_FILE_TO_C}")
+    else()
+        set(MARATHON_RECOMP_FILE_TO_C_COMMAND "$<TARGET_FILE:file_to_c>")
+        set(MARATHON_RECOMP_FILE_TO_C_TOOL_DEPENDS file_to_c)
+    endif()
+
     add_custom_command(OUTPUT "${BIN2C_ARGS_DEST_FILE}.c"
-        COMMAND $<TARGET_FILE:file_to_c> "${BIN2C_ARGS_SOURCE_FILE}" "${BIN2C_ARGS_ARRAY_NAME}" "${BIN2C_ARGS_COMPRESSION_TYPE}" "${BIN2C_ARGS_DEST_FILE}.c" "${BIN2C_ARGS_DEST_FILE}.h"
-        DEPENDS "${BIN2C_ARGS_SOURCE_FILE}"
+        COMMAND ${MARATHON_RECOMP_FILE_TO_C_COMMAND} "${BIN2C_ARGS_SOURCE_FILE}" "${BIN2C_ARGS_ARRAY_NAME}" "${BIN2C_ARGS_COMPRESSION_TYPE}" "${BIN2C_ARGS_DEST_FILE}.c" "${BIN2C_ARGS_DEST_FILE}.h"
+        DEPENDS "${BIN2C_ARGS_SOURCE_FILE}" ${MARATHON_RECOMP_FILE_TO_C_TOOL_DEPENDS}
         BYPRODUCTS "${BIN2C_ARGS_DEST_FILE}.h"
         COMMENT "Generating binary header for ${BIN2C_ARGS_SOURCE_FILE}..."
     )
@@ -62,8 +70,14 @@ else()
     add_compile_options(-ffp-model=strict)
 endif()
 
+if (NOT ANDROID)
+    # On Android, main() must stay as SDL_main() (via SDL_main.h's macro) so that
+    # SDL2's Android JNI glue (which calls SDL_main from a thread spawned by
+    # SDLActivity's nativeInit) has something to call; SDL_MAIN_HANDLED would suppress that.
+    add_compile_definitions(SDL_MAIN_HANDLED)
+endif()
+
 add_compile_definitions(
-    SDL_MAIN_HANDLED
     _DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR # Microsoft wtf?
     _CRT_SECURE_NO_WARNINGS)
 
@@ -93,6 +107,16 @@ if (WIN32)
         "os/win32/process_win32.cpp"
         "os/win32/user_win32.cpp"
         "os/win32/version_win32.cpp"
+    )
+elseif (ANDROID)
+    set(MARATHON_RECOMP_OS_CXX_SOURCES
+        "os/android/logger_android.cpp"
+        "os/android/media_android.cpp"
+        "os/android/process_android.cpp"
+        "os/android/storage_android.cpp"
+        "os/android/user_android.cpp"
+        "os/android/version_android.cpp"
+        "os/android/vulkan_driver_android.cpp"
     )
 elseif (CMAKE_SYSTEM_NAME MATCHES "Linux")
     set(MARATHON_RECOMP_OS_CXX_SOURCES
@@ -162,10 +186,19 @@ set(MARATHON_RECOMP_UI_CXX_SOURCES
     "ui/fader.cpp"
     "ui/game_window.cpp"
     "ui/imgui_utils.cpp"
-    "ui/installer_wizard.cpp"
     "ui/message_window.cpp"
     "ui/options_menu.cpp"
 )
+
+# The GUI installer wizard (native file picker + wizard UI) is not built for Android;
+# game files are installed from the app's launcher instead. See main.cpp __ANDROID__ guards.
+if (NOT ANDROID)
+    list(APPEND MARATHON_RECOMP_UI_CXX_SOURCES "ui/installer_wizard.cpp")
+else()
+    # On-screen touch controls are Android-only (they reference the Android-only
+    # config entries, which are guarded in user/config*.h).
+    list(APPEND MARATHON_RECOMP_UI_CXX_SOURCES "ui/touch_controls.cpp")
+endif()
 
 set(MARATHON_RECOMP_INSTALL_CXX_SOURCES
     "install/installer.cpp"
@@ -353,6 +386,12 @@ elseif (APPLE)
     add_custom_target(CopyMoltenVK DEPENDS ${MVK_ICD_DST} ${MVK_DYLIB_DST})
     add_dependencies(CopyMoltenVK MoltenVK)
     add_dependencies(MarathonRecomp CopyMoltenVK)
+elseif (ANDROID)
+    # Built as a shared library loaded via JNI from a Java Activity (the SDL2 Android
+    # template's SDLActivity expects "libmain.so" by default via getLibraries()), rather
+    # than a standalone executable, since Android apps cannot be launched as bare ELF binaries.
+    add_library(MarathonRecomp SHARED ${MARATHON_RECOMP_CXX_SOURCES})
+    set_target_properties(MarathonRecomp PROPERTIES OUTPUT_NAME "main")
 else()
     add_executable(MarathonRecomp ${MARATHON_RECOMP_CXX_SOURCES})
 endif()
@@ -362,6 +401,19 @@ if (MARATHON_RECOMP_FLATPAK)
         "MARATHON_RECOMP_FLATPAK"
         "GAME_INSTALL_DIRECTORY=\"/var/data\""
     )
+endif()
+
+if (ANDROID)
+    # Game files are installed from the app's own launcher (SAF file picker) into the
+    # app's private storage. This avoids /sdcard's FUSE-based scoped storage layer, which
+    # produced spurious "Permission denied" errors on stat() shortly after directory
+    # creation there. Must match applicationId in android-apk/app/build.gradle. Only a
+    # fallback constant: storage_android.cpp resolves the real path at runtime via SDL.
+    target_compile_definitions(MarathonRecomp PRIVATE
+        "GAME_INSTALL_DIRECTORY=\"/data/data/com.sega.marathon/files/MarathonRecomp\""
+    )
+
+    target_link_libraries(MarathonRecomp PRIVATE adrenotools)
 endif()
 
 find_package(CURL REQUIRED)
@@ -407,7 +459,6 @@ target_link_libraries(MarathonRecomp PRIVATE
     fmt::fmt
     libzstd_static
     msdf-atlas-gen::msdf-atlas-gen
-    nfd::nfd
     o1heap
     XenonUtils
     SDL2::SDL2-static
@@ -418,6 +469,10 @@ target_link_libraries(MarathonRecomp PRIVATE
     CURL::libcurl
     plume
 )
+
+if (NOT ANDROID)
+    target_link_libraries(MarathonRecomp PRIVATE nfd::nfd)
+endif()
 
 target_link_libraries(MarathonRecomp PRIVATE ffmpeg)
 

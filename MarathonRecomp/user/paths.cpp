@@ -2,7 +2,6 @@
 #include <os/process.h>
 
 std::filesystem::path g_executableRoot = os::process::GetExecutableRoot();
-std::filesystem::path g_userPath = BuildUserPath();
 
 bool CheckPortable()
 {
@@ -22,6 +21,11 @@ std::filesystem::path BuildUserPath()
         userPath = std::filesystem::path{ knownPath } / USER_DIRECTORY;
 
     CoTaskMemFree(knownPath);
+#elif defined(__ANDROID__)
+    // No meaningful $HOME/passwd entry for an app UID; getpwuid()->pw_dir returns a
+    // generic path apps can't write to. Keep config/saves next to the game files
+    // (legacy internal install or external app storage, whichever GetDataRoot picked).
+    userPath = os::android::GetDataRoot() / ".config" / USER_DIRECTORY;
 #elif defined(__linux__) || defined(__APPLE__)
     const char* homeDir = getenv("HOME");
 #if defined(__linux__)
@@ -54,5 +58,8 @@ std::filesystem::path BuildUserPath()
 
 const std::filesystem::path& GetUserPath()
 {
-    return g_userPath;
+    // Lazy: on Android the path is resolved through SDL/JNI, which isn't available
+    // yet when static initializers of this library run.
+    static std::filesystem::path userPath = BuildUserPath();
+    return userPath;
 }

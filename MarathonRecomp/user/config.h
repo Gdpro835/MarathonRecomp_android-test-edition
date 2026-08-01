@@ -153,6 +153,54 @@ enum class EUIAlignmentMode : uint32_t
     Centre
 };
 
+#ifdef __ANDROID__
+// Android-only: when the on-screen touch controls are shown.
+enum class EAndroidTouchControlsPolicy : uint32_t
+{
+    Auto,
+    AlwaysOn,
+    Off
+};
+
+// Android-only: camera control on touch screens - drag on the free right half of
+// the screen, a dedicated virtual right stick, or no touch camera at all.
+enum class EAndroidTouchCameraMode : uint32_t
+{
+    TouchArea,
+    RightStick,
+    Off
+};
+
+// Android-only: on-screen left input style - the analog thumbstick, or an 8-way
+// D-pad in place of it during gameplay (the D-pad is always used in menus).
+enum class EAndroidTouchStickMode : uint32_t
+{
+    Analog,
+    Dpad
+};
+
+// Android-only: which Vulkan ICD the app loads. Auto keeps the bundled Turnip
+// driver when available (Adreno), otherwise the system driver; Imported uses the
+// most recently imported driver package (see os/android/vulkan_driver_android.cpp).
+enum class EAndroidVulkanDriver : uint32_t
+{
+    Auto,
+    System,
+    Bundled,
+    Imported,
+    Vauzi710,
+    ExperimentalA725
+};
+
+// Android-only: Turnip TU_DEBUG render-mode preset.
+enum class EAndroidRenderMode : uint32_t
+{
+    Auto,
+    GMEM,
+    Sysmem
+};
+#endif
+
 enum class EPlayerCharacter : uint32_t
 {
     Sonic,

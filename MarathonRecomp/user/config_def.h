@@ -16,6 +16,11 @@ CONFIG_DEFINE_LOCALISED("Input", bool, AllowBackgroundInput, false, false);
 CONFIG_DEFINE_ENUM_LOCALISED("Input", EControllerIcons, ControllerIcons, EControllerIcons::Auto, false);
 CONFIG_DEFINE_ENUM_LOCALISED("Input", ELightDash, LightDash, ELightDash::X, false);
 CONFIG_DEFINE_ENUM_LOCALISED("Input", ESlidingAttack, SlidingAttack, ESlidingAttack::X, false);
+#ifdef __ANDROID__
+CONFIG_DEFINE_ENUM_LOCALISED("Input", EAndroidTouchControlsPolicy, TouchControls, EAndroidTouchControlsPolicy::Auto, false);
+CONFIG_DEFINE_ENUM_LOCALISED("Input", EAndroidTouchCameraMode, TouchCamera, EAndroidTouchCameraMode::TouchArea, false);
+CONFIG_DEFINE_ENUM_LOCALISED("Input", EAndroidTouchStickMode, TouchStickMode, EAndroidTouchStickMode::Analog, false);
+#endif
 
 CONFIG_DEFINE_ENUM("Bindings", SDL_Scancode, Key_A, SDL_SCANCODE_S, false);
 CONFIG_DEFINE_ENUM("Bindings", SDL_Scancode, Key_B, SDL_SCANCODE_D, false);
@@ -57,17 +62,40 @@ CONFIG_DEFINE("Video", int32_t, WindowHeight, 720, false);
 CONFIG_DEFINE_ENUM("Video", EWindowState, WindowState, EWindowState::Normal, false);
 CONFIG_DEFINE_LOCALISED("Video", int32_t, Monitor, 0, false);
 CONFIG_DEFINE_ENUM_LOCALISED("Video", EAspectRatio, AspectRatio, EAspectRatio::Auto, false);
+#ifdef __ANDROID__
+// The Adreno-class mobile GPUs this port targets sit at ~40 ms/frame at native
+// resolution; 50% scale + no MSAA is the measured sweet spot for playable
+// framerates, so the Android build defaults there instead of the desktop values.
+CONFIG_DEFINE_LOCALISED("Video", float, ResolutionScale, 0.5f, false);
+#else
 CONFIG_DEFINE_LOCALISED("Video", float, ResolutionScale, 1.0f, false);
+#endif
 CONFIG_DEFINE_LOCALISED("Video", bool, Fullscreen, true, false);
 CONFIG_DEFINE_LOCALISED("Video", bool, VSync, true, false);
 CONFIG_DEFINE_ENUM("Video", ETripleBuffering, TripleBuffering, ETripleBuffering::Auto, false);
 CONFIG_DEFINE_LOCALISED("Video", int32_t, FPS, 60, false);
 CONFIG_DEFINE("Video", bool, ShowFPS, false, false);
+// Android-only: initial visibility of the profiler overlay (there is no F1 key on
+// Android; it is toggled from the in-game Video menu, and closing the overlay
+// in-game persists as off). Desktop keeps using the F1 toggle.
+#ifdef __ANDROID__
+CONFIG_DEFINE("Video", bool, ShowProfiler, false, false);
+#endif
 CONFIG_DEFINE("Video", uint32_t, MaxFrameLatency, 2, false);
 CONFIG_DEFINE_LOCALISED("Video", float, Brightness, 0.5f, false);
+#ifdef __ANDROID__
+CONFIG_DEFINE_ENUM_LOCALISED("Video", EAntiAliasing, AntiAliasing, EAntiAliasing::Off, false);
+CONFIG_DEFINE_LOCALISED("Video", bool, TransparencyAntiAliasing, false, false);
+CONFIG_DEFINE("Video", uint32_t, AnisotropicFiltering, 4, false);
+#else
 CONFIG_DEFINE_ENUM_LOCALISED("Video", EAntiAliasing, AntiAliasing, EAntiAliasing::MSAA4x, false);
 CONFIG_DEFINE_LOCALISED("Video", bool, TransparencyAntiAliasing, true, false);
 CONFIG_DEFINE("Video", uint32_t, AnisotropicFiltering, 16, false);
+#endif
+#ifdef __ANDROID__
+CONFIG_DEFINE_ENUM_LOCALISED("Video", EAndroidVulkanDriver, VulkanDriver, EAndroidVulkanDriver::Auto, true);
+CONFIG_DEFINE_ENUM_LOCALISED("Video", EAndroidRenderMode, RenderMode, EAndroidRenderMode::Auto, true);
+#endif
 CONFIG_DEFINE_ENUM_LOCALISED("Video", EShadowResolution, ShadowResolution, EShadowResolution::x4096, false);
 CONFIG_DEFINE_ENUM_LOCALISED("Video", EReflectionResolution, ReflectionResolution, EReflectionResolution::Half, false);
 CONFIG_DEFINE_ENUM_LOCALISED("Video", ERadialBlur, RadialBlur, ERadialBlur::Original, false);

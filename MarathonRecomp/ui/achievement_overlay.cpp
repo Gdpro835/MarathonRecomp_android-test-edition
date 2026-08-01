@@ -17,7 +17,12 @@ static double g_appearTime{};
 static Achievement g_achievement{};
 
 // Dequeue achievements only in the main thread. This is also extra thread safety.
-static std::thread::id g_mainThreadId = std::this_thread::get_id();
+// Captured lazily on the first Draw() call instead of in a static initializer: on
+// Android the library is loaded on the Java UI thread, so a static initializer would
+// capture the wrong thread and CanDequeueAchievement() would never pass. A
+// default-constructed id matches no thread, which keeps dequeueing disabled until
+// Draw() first runs on the game main thread.
+static std::thread::id g_mainThreadId;
 
 static bool CanDequeueAchievement()
 {
@@ -26,6 +31,9 @@ static bool CanDequeueAchievement()
 
 void AchievementOverlay::Draw()
 {
+    if (g_mainThreadId == std::thread::id{})
+        g_mainThreadId = std::this_thread::get_id();
+
     if (!AchievementOverlay::s_isVisible && CanDequeueAchievement())
     {
         s_isVisible = true;

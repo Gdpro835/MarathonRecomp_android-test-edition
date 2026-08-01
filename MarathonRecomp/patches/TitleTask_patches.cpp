@@ -3,6 +3,7 @@
 #include <ui/fader.h>
 #include <ui/message_window.h>
 #include <ui/options_menu.h>
+#include <ui/touch_controls.h>
 #include <user/achievement_manager.h>
 #include <user/config.h>
 #include <user/paths.h>
@@ -93,6 +94,11 @@ PPC_FUNC(sub_825126A0)
 {
     auto pTitleTask = (Sonicteam::TitleTask*)(base + ctx.r3.u32);
     auto deltaTime = ctx.f1.f64;
+
+#ifdef __ANDROID__
+    // The title screen is a navigation surface: the touch stick acts as a D-pad there.
+    TouchControls::NotifyMenuVisible();
+#endif
 
     switch (pTitleTask->m_State)
     {

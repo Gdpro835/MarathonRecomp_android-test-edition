@@ -825,6 +825,11 @@ static void DrawOptions(ImVec2 min, ImVec2 max)
             DrawOption(rowCount++, &Config::ControllerIcons, !OptionsMenu::s_isPause, cmnReason);
             DrawOption(rowCount++, &Config::LightDash, true, nullptr, ENUM_VALUE(ELightDash), false, true);
             DrawOption(rowCount++, &Config::SlidingAttack, true, nullptr, ENUM_VALUE(ESlidingAttack), false, true);
+#ifdef __ANDROID__
+            DrawOption(rowCount++, &Config::TouchControls, true);
+            DrawOption(rowCount++, &Config::TouchCamera, true);
+            DrawOption(rowCount++, &Config::TouchStickMode, true);
+#endif
             break;
 
         case OptionsMenuCategory::Audio:
@@ -838,6 +843,7 @@ static void DrawOptions(ImVec2 min, ImVec2 max)
 
         case OptionsMenuCategory::Video:
         {
+#ifndef __ANDROID__
             // TODO: implement buffer resize.
             DrawOption(rowCount++, &Config::WindowSize, false, devReason, 0, 0, 1, false);
 
@@ -856,6 +862,17 @@ static void DrawOptions(ImVec2 min, ImVec2 max)
             DrawOption(rowCount++, &Config::AspectRatio, false, devReason);                            // TODO: implement buffer resize. DrawOption(rowCount++, &Config::AspectRatio, true);
             DrawOption(rowCount++, &Config::ResolutionScale, false, devReason);                        // TODO: implement buffer resize. DrawOption(rowCount++, &Config::ResolutionScale, true, nullptr, 0.25f, 1.0f, 2.0f);
             DrawOption(rowCount++, &Config::Fullscreen, false, devReason);                             // TODO: implement buffer resize. DrawOption(rowCount++, &Config::Fullscreen, true);
+#else
+            // Windowing options make no sense on Android: the game always runs
+            // fullscreen on the one display at its native size, and the
+            // compositor vsyncs every frame regardless. The resolution scale,
+            // which is what actually matters on mobile hardware, stays.
+            DrawOption(rowCount++, &Config::ResolutionScale, true, nullptr, 0.25f, 1.0f, 2.0f);
+            DrawOption(rowCount++, &Config::VulkanDriver, true);
+            DrawOption(rowCount++, &Config::RenderMode, true);
+            DrawOption(rowCount++, &Config::ShowFPS, true);
+            DrawOption(rowCount++, &Config::ShowProfiler, true);
+#endif
             DrawOption(rowCount++, &Config::VSync, true);
             DrawOption(rowCount++, &Config::FPS, true, nullptr, FPS_MIN, 120, FPS_MAX);
             DrawOption(rowCount++, &Config::Brightness, true);

@@ -23,7 +23,15 @@ Memory::Memory()
     if (base == nullptr)
         return;
 
+#ifdef __ANDROID__
+    // Keep the guest null page readable and writable. On some devices the game
+    // evaluates a half-constructed animation subtree whose data pointers are 0/-1;
+    // testers confirmed the reads are benign (zeros) with no visual artifacts,
+    // while faulting made the game unplayable there. Desktop builds keep the trap
+    // to catch new bugs.
+#else
     mprotect(base, 4096, PROT_NONE);
+#endif
 #endif
 
     for (size_t i = 0; PPCFuncMappings[i].guest != 0; i++)

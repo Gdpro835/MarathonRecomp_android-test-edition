@@ -30,11 +30,17 @@
 #include <ui/options_menu.h>
 #include <ui/game_window.h>
 #include <ui/black_bar.h>
+#include <ui/touch_controls.h>
 #include <patches/aspect_ratio_patches.h>
 #include <user/config.h>
 #include <sdl_listener.h>
 #include <xxHashMap.h>
+#include <os/logger.h>
 #include <os/process.h>
+#if defined(__ANDROID__)
+#include <os/android/storage_android.h>
+#include <os/android/vulkan_driver_android.h>
+#endif
 
 #if defined(ASYNC_PSO_DEBUG) || defined(PSO_CACHING)
 #include <magic_enum/magic_enum.hpp>
@@ -373,8 +379,20 @@ static std::unique_ptr<RenderCommandFence> g_discardCommandFence;
 
 static std::unique_ptr<RenderSwapChain> g_swapChain;
 static bool g_swapChainValid;
+#if defined(__ANDROID__)
+static uint64_t g_androidSwapchainRetryAfterMs;
+#endif
 
+#if defined(__ANDROID__)
+// The Android WSI surface backing the ANativeWindow on this device only reports RGBA-order
+// formats (R8G8B8A8_UNORM/_SRGB) among its supported surface formats, not BGRA. Using
+// B8G8R8A8_UNORM here (as on Windows/D3D-style platforms) leaves the swap chain's
+// compatible-format search empty, which silently leaves the swap chain's format at
+// VK_FORMAT_UNDEFINED and crashes on the first vkCreateSwapchainKHR call.
+static constexpr RenderFormat BACKBUFFER_FORMAT = RenderFormat::R8G8B8A8_UNORM;
+#else
 static constexpr RenderFormat BACKBUFFER_FORMAT = RenderFormat::B8G8R8A8_UNORM;
+#endif
 
 static std::unique_ptr<RenderCommandSemaphore> g_acquireSemaphores[NUM_FRAMES];
 static std::unique_ptr<RenderCommandSemaphore> g_renderSemaphores[NUM_FRAMES];
@@ -1588,7 +1606,11 @@ static void CreateImGuiBackend()
 
     InitImGuiUtils();
     OptionsMenu::Init();
+#ifdef __ANDROID__
+    TouchControls::Init();
+#else
     InstallerWizard::Init();
+#endif
 
     ImGui_ImplSDL2_InitForOther(GameWindow::s_pWindow);
 
@@ -1735,16 +1757,70 @@ static void CreateImGuiBackend()
 
 static void CheckSwapChain()
 {
+#if defined(__ANDROID__)
+    // Android replaces the ANativeWindow across background/foreground. The old VkSurfaceKHR
+    // then references a dead window: swapchain recreation and presents "succeed" but never
+    // reach the screen (black screen while audio keeps running). Compare every frame so the
+    // change is caught even if lifecycle events were missed.
+    plume::RenderWindow currentNativeWindow = GameWindow::GetAndroidNativeWindow();
+    if (currentNativeWindow != g_swapChain->getWindow())
+        g_swapChainValid = false;
+#endif
+
     g_swapChain->setVsyncEnabled(Config::VSync);
     g_swapChainValid &= !g_swapChain->needsResize();
 
     if (!g_swapChainValid)
     {
+#if defined(__ANDROID__)
+        const uint64_t nowMs = SDL_GetTicks64();
+        if (nowMs < g_androidSwapchainRetryAfterMs)
+            goto skipResizeAttempt;
+
+        // Backgrounded: no window to present into yet. Keep rendering offscreen and retry.
+        if (currentNativeWindow == nullptr)
+        {
+            g_androidSwapchainRetryAfterMs = nowMs + 100;
+            goto skipResizeAttempt;
+        }
+
+        if (currentNativeWindow != g_swapChain->getWindow())
+        {
+            Video::WaitForGPU();
+            os::logger::Log("native window changed; recreating Vulkan surface", os::logger::ELogType::Utility, "android");
+            GameWindow::s_renderWindow = currentNativeWindow;
+
+            if (!g_swapChain->recreateSurface(currentNativeWindow))
+            {
+                g_androidSwapchainRetryAfterMs = nowMs + 500;
+                os::logger::Log("surface recreate failed; delaying retry", os::logger::ELogType::Warning, "android");
+                goto skipResizeAttempt;
+            }
+        }
+#endif
+
         Video::WaitForGPU();
         g_backBuffer->framebuffers.clear();
         g_swapChainValid = g_swapChain->resize();
         g_needsResize = g_swapChainValid;
+
+#if defined(__ANDROID__)
+        if (!g_swapChainValid)
+        {
+            g_androidSwapchainRetryAfterMs = nowMs + 500;
+            os::logger::Log("swapchain resize failed; delaying retry", os::logger::ELogType::Warning, "android");
+        }
+        else
+        {
+            os::logger::Log("swapchain (re)created successfully", os::logger::ELogType::Utility, "android");
+            AndroidMarkVulkanStartupSuccessful();
+        }
+#endif
     }
+
+#if defined(__ANDROID__)
+skipResizeAttempt:
+#endif
 
     if (g_swapChainValid)
     {
@@ -1841,7 +1917,12 @@ static void ApplyLowEndDefaults()
 {
     bool changed = false;
 
+#ifdef __ANDROID__
+    // MSAA triggers rendering artifacts on Turnip a7xx gen3 and is never worth its cost here.
+    ApplyLowEndDefault(Config::AntiAliasing, EAntiAliasing::Off, changed);
+#else
     ApplyLowEndDefault(Config::AntiAliasing, EAntiAliasing::MSAA2x, changed);
+#endif
     ApplyLowEndDefault(Config::ShadowResolution, EShadowResolution::x1024, changed);
     ApplyLowEndDefault(Config::ReflectionResolution, EReflectionResolution::Quarter, changed);
     ApplyLowEndDefault(Config::TransparencyAntiAliasing, false, changed);
@@ -2077,6 +2158,14 @@ bool Video::CreateHostDevice(const char *sdlVideoDriver, bool graphicsApiRetry)
     g_swapChain->setVsyncEnabled(Config::VSync);
     g_swapChainValid = !g_swapChain->needsResize();
 
+#if defined(__ANDROID__)
+    // A custom loader reaching dlopen/device creation is not sufficient: only a usable WSI
+    // swapchain proves that Vulkan startup completed. If initial WSI creation is deferred,
+    // CheckSwapChain() clears the marker after its first successful resize instead.
+    if (g_backend == Backend::VULKAN && g_swapChainValid)
+        AndroidMarkVulkanStartupSuccessful();
+#endif
+
     for (auto& acquireSemaphore : g_acquireSemaphores)
         acquireSemaphore = g_device->createCommandSemaphore();
     
@@ -2291,6 +2380,21 @@ bool Video::CreateHostDevice(const char *sdlVideoDriver, bool graphicsApiRetry)
 }
 
 static uint32_t g_waitForGPUCount = 0;
+
+#ifdef __ANDROID__
+void Video::OnAndroidResume()
+{
+    // Called from the app tick unpause (after nativeResume / surface resume).
+    // Android may have invalidated the ANativeWindow-backed surface during background.
+    // Invalidate so CheckSwapChain will recreate on next present.
+    // This fixes black screen on resume while audio continues independently.
+    g_swapChainValid = false;
+    g_pendingWaitOnSwapChain = true;
+    g_androidSwapchainRetryAfterMs = 0;
+    // Note: actual recreate happens in CheckSwapChain() via g_swapChain->recreateSurface()
+    // / resize().
+}
+#endif
 
 void Video::WaitForGPU()
 {
@@ -2613,6 +2717,15 @@ static const char *DeviceTypeName(RenderDeviceType type)
 
 static void DrawProfiler()
 {
+#ifdef __ANDROID__
+    static bool s_profilerVisibilityInitialized;
+    if (!s_profilerVisibilityInitialized)
+    {
+        g_profilerVisible = Config::ShowProfiler;
+        s_profilerVisibilityInitialized = true;
+    }
+#endif
+
     bool toggleProfiler = SDL_GetKeyboardState(nullptr)[SDL_SCANCODE_F1] != 0;
 
     if (!g_profilerWasToggled && toggleProfiler)
@@ -2928,7 +3041,9 @@ static void DrawImGui()
     UpdateImGuiUtils();
     AchievementMenu::Draw();
     OptionsMenu::Draw();
+#ifndef __ANDROID__
     InstallerWizard::Draw();
+#endif
     ButtonWindow::Draw();
     MessageWindow::Draw();
     AchievementOverlay::Draw();
@@ -2938,6 +3053,9 @@ static void DrawImGui()
     assert(ImGui::GetBackgroundDrawList()->_ClipRectStack.Size == 1 && "Some clip rects were not removed from the stack!");
 
     DrawFPS();
+#ifdef __ANDROID__
+    TouchControls::Draw();
+#endif
     DrawProfiler();
     ImGui::Render();
 
@@ -3125,6 +3243,10 @@ static std::atomic<bool> g_executedCommandList;
 
 void Video::Present() 
 {
+    // Feeds the Android hang-watchdog (no-op elsewhere): if these stop, the log.txt
+    // timestamp of the last ping marks when the app froze.
+    os::logger::Heartbeat();
+
     g_readyForCommands = false;
 
     RenderCommand cmd;
@@ -6399,6 +6521,12 @@ static bool IsSet() {
 void MovieRendererMidAsmHook(PPCRegister& r3)
 {
     auto device = reinterpret_cast<GuestDevice*>(g_memory.Translate(r3.u32));
+
+#ifdef __ANDROID__
+    // Stamped per rendered WMV frame (attract movie, opening and the like): the touch
+    // overlay collapses to a single SKIP button while a movie plays.
+    TouchControls::NotifyMovieVisible();
+#endif
 
     // Force linear filtering & clamp addressing
     for (size_t i = 0; i < 3; i++)

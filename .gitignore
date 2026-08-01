@@ -404,3 +404,21 @@ FodyWeavers.xsd
 
 UnleashedRecompLib/build
 UnleashedRecompLib/ppc*
+
+## Android app build outputs
+android-apk/.gradle/
+android-apk/build/
+android-apk/app/build/
+android-apk/local.properties
+android-apk/.idea/
+android-apk/captures/
+*.apk
+*.aab
+
+## MarathonRecomp Android native build tree
+out/build/android-arm64/
+out/build/linux-host-tools/
+
+## Generated (build-time) files
+MarathonRecomp/version.h
+MarathonRecomp/version.cpp

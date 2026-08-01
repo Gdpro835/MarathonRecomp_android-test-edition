@@ -211,6 +211,73 @@ int main(int argc, char *argv[])
 
     Config::Load();
 
+#ifdef __ANDROID__
+    // PR #78: install a base-game ISO/container and optional DLC packages staged by the
+    // Android launcher. Keep the staging directory on failure so the user can correct
+    // the source set without copying it again.
+    {
+        const std::filesystem::path root = GetGamePath();
+        const std::filesystem::path stagingDir = root / "to_install";
+        std::error_code ec;
+        std::filesystem::path installedModulePath;
+        const bool hasStaging = std::filesystem::is_directory(stagingDir, ec);
+        const bool gameAlreadyInstalled = Installer::checkGameInstall(root, installedModulePath);
+        if (hasStaging && !gameAlreadyInstalled)
+        {
+            Installer::Input input;
+            for (std::filesystem::directory_iterator it(stagingDir, ec), end; !ec && it != end; it.increment(ec))
+            {
+                const std::filesystem::path source = it->path();
+                if (input.gameSource.empty() && Installer::parseGame(source))
+                    input.gameSource = source;
+                else if (Installer::parseDLC(source) != DLC::Unknown)
+                    input.dlcSources.push_back(source);
+            }
+
+            Journal journal;
+            Installer::Sources sources;
+            bool installSucceeded = false;
+            if (ec)
+            {
+                journal.lastErrorMessage = "Unable to enumerate the staged installer files: " + ec.message();
+            }
+            else if (input.gameSource.empty())
+            {
+                journal.lastErrorMessage = "The staged files must contain the base game.";
+            }
+            else if (Installer::parseSources(input, journal, sources))
+            {
+                installSucceeded = Installer::install(sources, root, false, journal,
+                    std::chrono::seconds(0), []() { return true; });
+            }
+
+            if (installSucceeded)
+            {
+                std::error_code removeEc;
+                std::filesystem::remove_all(stagingDir, removeEc);
+                if (removeEc)
+                    LOGFN_WARNING("Failed to remove ISO staging directory after installation: {}", removeEc.message());
+
+                const std::string resultText = Localise("IntegrityCheck_Success");
+                LOG("Installed the staged Android ISO/package sources successfully.");
+                SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, GameWindow::GetTitle(),
+                    resultText.c_str(), GameWindow::s_pWindow);
+            }
+            else
+            {
+                Installer::rollback(journal);
+                const std::string reason = journal.lastErrorMessage.empty()
+                    ? "Unable to parse or install the staged game sources."
+                    : journal.lastErrorMessage;
+                LOGFN_ERROR("Android ISO/package installation failed: {}", reason);
+                SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, GameWindow::GetTitle(),
+                    reason.c_str(), GameWindow::s_pWindow);
+                std::_Exit(1);
+            }
+        }
+    }
+#endif
+
     if (forceInstallationCheck)
     {
         // Create the console to show progress to the user, otherwise it will seem as if the game didn't boot at all.
@@ -297,6 +364,28 @@ int main(int argc, char *argv[])
     std::filesystem::path modulePath;
     bool isGameInstalled = Installer::checkGameInstall(GetGamePath(), modulePath);
     bool runInstallerWizard = forceInstaller || forceDLCInstaller || !isGameInstalled;
+#ifdef __ANDROID__
+    // The GUI installer wizard is not built for Android. Tell the user where to put
+    // the game files (app-specific external storage, reachable from a PC over USB)
+    // and exit; the directory has already been created by GetGamePath().
+    if (!isGameInstalled)
+    {
+        char text[1024];
+        snprintf(text, sizeof(text),
+            "Game files not found.\n\n"
+            "Copy your Sonic the Hedgehog (2006) dump folders (game, optional dlc) into:\n\n"
+            "%s\n\n"
+            "Alternative: copy the game's iso and dlcs into:\n\n"
+            "%s/to_install\n\n"
+            "The folder is accessible from a PC over a USB cable.\n"
+            "Restart the app after copying.",
+            (const char *)GetGamePath().u8string().c_str(),
+            (const char *)GetGamePath().u8string().c_str());
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, GameWindow::GetTitle(), text, GameWindow::s_pWindow);
+        std::_Exit(1);
+    }
+    runInstallerWizard = false;
+#else
     if (runInstallerWizard)
     {
         if (!Video::CreateHostDevice(sdlVideoDriver, graphicsApiRetry))
@@ -308,6 +397,7 @@ int main(int argc, char *argv[])
         if (!InstallerWizard::Run(GetGamePath(), isGameInstalled && forceDLCInstaller))
             std::_Exit(0);
     }
+#endif
 
     // ModLoader::Init();
 

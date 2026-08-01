@@ -3,6 +3,8 @@
 #include <api/Marathon.h>
 #include <user/config.h>
 
+#include <atomic>
+
 class App
 {
 public:
@@ -20,6 +22,12 @@ public:
 
     static inline double s_deltaTime;
     static inline double s_time = 0.0; // How much time elapsed since the game started.
+
+#ifdef __ANDROID__
+    // Set from SDL nativePause/nativeResume — game update blocks while true.
+    static inline std::atomic<bool> s_androidPaused{};
+    static inline std::atomic<bool> s_androidAudioRoutePaused{};
+#endif
 
     static void Restart(std::vector<std::string> restartArgs = {});
     static void Exit();

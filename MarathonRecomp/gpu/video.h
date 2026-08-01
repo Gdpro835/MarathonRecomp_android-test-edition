@@ -31,6 +31,12 @@ struct Video
     static void StartPipelinePrecompilation();
     static void WaitForGPU();
     static void ComputeViewportDimensions();
+#ifdef __ANDROID__
+    // Called from the app tick when the game unpauses after being backgrounded: the
+    // ANativeWindow may have been replaced, so invalidate the swap chain so it is
+    // recreated against the new window on the next present.
+    static void OnAndroidResume();
+#endif
 };
 
 enum class Backend {

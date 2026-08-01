@@ -61,4 +61,12 @@ namespace os::logger
 
     void Init();
     void Log(const std::string_view str, ELogType type = ELogType::None, const char* func = nullptr);
+
+    // Cheap per-frame liveness ping. On Android it feeds a hang-watchdog thread that dumps
+    // thread states to log.txt if frames stop being presented; a no-op on other platforms.
+    void Heartbeat();
+
+    // Pauses the Android hang watchdog while the game is intentionally frozen in the
+    // background, so the missing frames are not reported as a hang; a no-op elsewhere.
+    void SetWatchdogSuspended(bool suspended);
 }

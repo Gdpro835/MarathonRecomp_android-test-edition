@@ -427,6 +427,60 @@ CONFIG_DEFINE_ENUM_LOCALE(ESlidingAttack)
     }
 };
 
+#ifdef __ANDROID__
+// Android-only options. Other languages deliberately fall back to English until the
+// Android port strings are translated together with the rest of its platform UI.
+CONFIG_DEFINE_LOCALE(TouchControls)
+{
+    { ELanguage::English, { "Touch Controls", "Choose when the on-screen controls are shown. Changes apply immediately." } }
+};
+
+CONFIG_DEFINE_ENUM_LOCALE(EAndroidTouchControlsPolicy)
+{
+    {
+        ELanguage::English,
+        {
+            { EAndroidTouchControlsPolicy::Auto,     { "AUTO", "Auto: show touch controls until a physical controller becomes active; touching the screen shows them again." } },
+            { EAndroidTouchControlsPolicy::AlwaysOn, { "ALWAYS ON", "Always On: keep touch controls visible while allowing physical controller and keyboard input." } },
+            { EAndroidTouchControlsPolicy::Off,      { "OFF", "Off: hide touch controls and use physical controller or keyboard input." } }
+        }
+    }
+};
+
+CONFIG_DEFINE_LOCALE(TouchCamera)
+{
+    { ELanguage::English, { "Touch Camera", "Choose how the camera is controlled by touch. Changes apply immediately." } }
+};
+
+CONFIG_DEFINE_ENUM_LOCALE(EAndroidTouchCameraMode)
+{
+    {
+        ELanguage::English,
+        {
+            { EAndroidTouchCameraMode::TouchArea,  { "SWIPE ON SCREEN", "Swipe on Screen: drag anywhere on the free right half of the screen to move the camera." } },
+            { EAndroidTouchCameraMode::RightStick, { "RIGHT STICK", "Right Stick: control the camera with a dedicated on-screen right stick." } },
+            { EAndroidTouchCameraMode::Off,        { "OFF", "Off: disable touch camera control." } }
+        }
+    }
+};
+
+CONFIG_DEFINE_LOCALE(TouchStickMode)
+{
+    { ELanguage::English, { "On-Screen Stick", "Choose the left on-screen input style. The D-pad is always used in menus. Changes apply immediately." } }
+};
+
+CONFIG_DEFINE_ENUM_LOCALE(EAndroidTouchStickMode)
+{
+    {
+        ELanguage::English,
+        {
+            { EAndroidTouchStickMode::Analog, { "ANALOG STICK", "Analog Stick: a virtual thumbstick with full analog range." } },
+            { EAndroidTouchStickMode::Dpad,   { "D-PAD", "D-Pad: an 8-way D-pad in place of the analog stick." } }
+        }
+    }
+};
+#endif
+
 CONFIG_DEFINE_LOCALE(MasterVolume)
 {
     { ELanguage::English,  { "Master Volume", "Adjust the overall volume." } },
@@ -871,6 +925,46 @@ CONFIG_DEFINE_ENUM_LOCALE(ECutsceneAspectRatio)
         }
     }
 };
+
+#ifdef __ANDROID__
+// Android-only options. Other languages fall back to English.
+CONFIG_DEFINE_LOCALE(VulkanDriver)
+{
+    { ELanguage::English, { "Vulkan Driver", "Choose which Vulkan driver the game loads. Changes require a restart." } }
+};
+
+CONFIG_DEFINE_ENUM_LOCALE(EAndroidVulkanDriver)
+{
+    {
+        ELanguage::English,
+        {
+            { EAndroidVulkanDriver::Auto,              { "AUTO", "Auto: use the bundled driver on Adreno GPUs, otherwise the system driver." } },
+            { EAndroidVulkanDriver::System,            { "SYSTEM", "System: use the device's own Vulkan driver." } },
+            { EAndroidVulkanDriver::Bundled,           { "BUNDLED", "Bundled: use the Turnip driver bundled in the app." } },
+            { EAndroidVulkanDriver::Imported,          { "IMPORTED", "Imported: use the driver imported from the launcher." } },
+            { EAndroidVulkanDriver::Vauzi710,          { "AD 710 (VAUZI)", "Adreno 710 Vauzi: community driver for Adreno 710 devices." } },
+            { EAndroidVulkanDriver::ExperimentalA725,  { "A725 EXP", "A725 Performance (experimental): community driver for Adreno 725; forces sysmem rendering." } }
+        }
+    }
+};
+
+CONFIG_DEFINE_LOCALE(RenderMode)
+{
+    { ELanguage::English, { "Render Mode", "Choose the Turnip render mode. Changes require a restart." } }
+};
+
+CONFIG_DEFINE_ENUM_LOCALE(EAndroidRenderMode)
+{
+    {
+        ELanguage::English,
+        {
+            { EAndroidRenderMode::Auto,   { "AUTO", "Auto: GMEM on Adreno 7xx, otherwise the driver default." } },
+            { EAndroidRenderMode::GMEM,   { "GMEM", "GMEM: render through the GPU's on-chip memory." } },
+            { EAndroidRenderMode::Sysmem, { "SYSMEM", "Sysmem: render through system memory." } }
+        }
+    }
+};
+#endif
 
 CONFIG_DEFINE_LOCALE(UIAlignmentMode)
 {

@@ -52,9 +52,3 @@
 [submodule "thirdparty/MoltenVK/SPIRV-Cross"]
 	path = thirdparty/MoltenVK/SPIRV-Cross
 	url = https://github.com/KhronosGroup/SPIRV-Cross.git
-[submodule "thirdparty/plume"]
-	path = thirdparty/plume
-	url = https://github.com/renderbag/plume
-[submodule "thirdparty/ffmpeg-core"]
-	path = thirdparty/ffmpeg-core
-	url = https://github.com/sonicnext-dev/ffmpeg-core

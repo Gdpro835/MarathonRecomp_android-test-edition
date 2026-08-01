@@ -2,6 +2,7 @@
 #include <ui/achievement_menu.h>
 #include <ui/button_window.h>
 #include <ui/options_menu.h>
+#include <ui/touch_controls.h>
 #include <exports.h>
 
 // Sonicteam::MainMenuTask::Update
@@ -10,6 +11,12 @@ PPC_FUNC(sub_824FFCF8)
 {
     auto pMainMenuTask = (Sonicteam::MainMenuTask*)(base + ctx.r3.u32);
     auto pHUDMainMenu = pMainMenuTask->m_pHUDMainMenu;
+
+#ifdef __ANDROID__
+    // The main menu (story/extra mode select etc.) is a navigation surface: the touch
+    // stick acts as a D-pad there.
+    TouchControls::NotifyMenuVisible();
+#endif
 
 #ifdef MARATHON_RECOMP_OPTIONS_MENU
     if (pHUDMainMenu)
