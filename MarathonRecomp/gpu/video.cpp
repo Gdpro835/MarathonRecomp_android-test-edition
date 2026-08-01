@@ -2442,21 +2442,6 @@ bool Video::CreateHostDevice(const char *sdlVideoDriver, bool graphicsApiRetry)
 
 static uint32_t g_waitForGPUCount = 0;
 
-#ifdef __ANDROID__
-void Video::OnAndroidResume()
-{
-    // Called from the app tick unpause (after nativeResume / surface resume).
-    // Android may have invalidated the ANativeWindow-backed surface during background.
-    // Invalidate so CheckSwapChain will recreate on next present.
-    // This fixes black screen on resume while audio continues independently.
-    g_swapChainValid = false;
-    g_pendingWaitOnSwapChain = true;
-    g_androidSwapchainRetryAfterMs = 0;
-    // Note: actual recreate happens in CheckSwapChain() via g_swapChain->recreateSurface()
-    // / resize().
-}
-#endif
-
 void Video::WaitForGPU()
 {
     g_waitForGPUCount++;
@@ -3285,6 +3270,21 @@ static void ProcDrawImGui(const RenderCommand& cmd)
 // 4. Loading thread presents and quits.
 // 5. After the loading thread quits, application also presents.
 static bool g_pendingWaitOnSwapChain = true;
+
+#ifdef __ANDROID__
+void Video::OnAndroidResume()
+{
+    // Called from the app tick unpause (after nativeResume / surface resume).
+    // Android may have invalidated the ANativeWindow-backed surface during background.
+    // Invalidate so CheckSwapChain will recreate on next present.
+    // This fixes black screen on resume while audio continues independently.
+    g_swapChainValid = false;
+    g_pendingWaitOnSwapChain = true;
+    g_androidSwapchainRetryAfterMs = 0;
+    // Note: actual recreate happens in CheckSwapChain() via g_swapChain->recreateSurface()
+    // / resize().
+}
+#endif
 
 void Video::WaitOnSwapChain()
 {
