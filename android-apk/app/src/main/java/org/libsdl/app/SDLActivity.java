@@ -658,6 +658,21 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         }
 
         int keyCode = event.getKeyCode();
+
+        // SDL's focused Surface consumes keyboard events before Activity.onBackPressed()
+        // is reached. Intercept the real Android Back key at the Activity boundary so
+        // SDL_ANDROID_TRAP_BACK_BUTTON cannot swallow the minimize request. Preserve the
+        // platform behavior while the hidden text editor/IME is actually visible, and do
+        // not reinterpret mouse back buttons as task navigation.
+        if (keyCode == KeyEvent.KEYCODE_BACK &&
+            (event.getSource() & InputDevice.SOURCE_MOUSE) != InputDevice.SOURCE_MOUSE &&
+            (mTextEdit == null || mTextEdit.getVisibility() != View.VISIBLE)) {
+            if (event.getAction() == KeyEvent.ACTION_UP) {
+                minimizeTask();
+            }
+            return true;
+        }
+
         // Ignore certain special keys so they're handled by Android
         if (keyCode == KeyEvent.KEYCODE_VOLUME_DOWN ||
             keyCode == KeyEvent.KEYCODE_VOLUME_UP ||
@@ -1348,20 +1363,6 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
                     return true;
                 }
             }
-        }
-
-        // SDL's focused Surface consumes keyboard events before Activity.onBackPressed()
-        // is reached. Intercept the real Android Back key at the Activity boundary so
-        // SDL_ANDROID_TRAP_BACK_BUTTON cannot swallow the minimize request. Preserve the
-        // platform behavior while the hidden text editor/IME is actually visible, and do
-        // not reinterpret mouse back buttons as task navigation.
-        if (keyCode == KeyEvent.KEYCODE_BACK &&
-            (event.getSource() & InputDevice.SOURCE_MOUSE) != InputDevice.SOURCE_MOUSE &&
-            (mTextEdit == null || mTextEdit.getVisibility() != View.VISIBLE)) {
-            if (event.getAction() == KeyEvent.ACTION_UP) {
-                minimizeTask();
-            }
-            return true;
         }
 
         if ((source & InputDevice.SOURCE_MOUSE) == InputDevice.SOURCE_MOUSE) {
