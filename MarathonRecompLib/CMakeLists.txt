@@ -96,7 +96,15 @@ add_custom_command(
     OUTPUT
         "${CMAKE_CURRENT_SOURCE_DIR}/shader/shader_cache.cpp"
     COMMAND
+        # Explicit arguments for prebuilt host tools compiled without the
+        # XENOS_RECOMP_INPUT/OUTPUT/INCLUDE_INPUT definitions: such a binary
+        # invoked bare prints its usage text and exits 0, so the rule
+        # "succeeds" without producing any outputs. Binaries that do have the
+        # baked-in paths ignore these arguments entirely.
         ${MARATHON_RECOMP_XENOS_RECOMP_COMMAND}
+            "${CMAKE_CURRENT_SOURCE_DIR}/private/shader"
+            "${CMAKE_CURRENT_SOURCE_DIR}/shader/shader_cache.cpp"
+            "${XENOS_RECOMP_INCLUDE}"
     DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/private/shader"
         ${XENOS_RECOMP_SOURCES}

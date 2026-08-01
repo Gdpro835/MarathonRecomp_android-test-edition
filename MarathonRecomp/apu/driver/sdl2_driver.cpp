@@ -7,10 +7,15 @@
 #include <user/config.h>
 
 #ifdef __ANDROID__
-extern "C" void Android_JNI_FlushAudioOutput(void);
-extern "C" void Android_JNI_PauseAudioOutput(void);
-extern "C" void Android_JNI_ResumeAudioOutput(void);
-extern "C" int Android_JNI_RouteAudioOutput(int device_id);
+// SDL 2.32.x does not export these JNI glue helpers (they existed only in the
+// 2.31 development line used by the reference Android port). Flush/pause/resume
+// of the Java AudioTrack is handled by SDL's own android audio backend in this
+// version, and the FIFO producer + SDL_PauseAudioDevice cover the lifecycle, so
+// these are no-ops here.
+static void Android_JNI_FlushAudioOutput(void) {}
+static void Android_JNI_PauseAudioOutput(void) {}
+static void Android_JNI_ResumeAudioOutput(void) {}
+static int Android_JNI_RouteAudioOutput(int device_id) { (void)device_id; return 0; }
 #endif
 
 // ============================================================================================
