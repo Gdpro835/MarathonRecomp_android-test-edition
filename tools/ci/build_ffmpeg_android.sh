@@ -55,6 +55,9 @@ patch -d "$src" -p1 --forward --silent < "$PATCH" || true
 echo "::endgroup::"
 
 echo "::group::Configuring ffmpeg for arm64-android"
+# NOTE: NEON asm (tx_float_neon.S) is compiled by a separate assembler that
+# does not pick up -fPIC, producing non-PIC relocations that cannot link into
+# the shared libmain.so. The xmaframes decoder is pure C, so disable asm.
 cd "$src"
 ./configure \
     --cc="$bin/aarch64-linux-android${api}-clang" \
@@ -70,8 +73,8 @@ cd "$src"
     --sysroot="$sysroot" \
     --enable-static --disable-shared \
     --disable-programs --disable-doc --disable-autodetect \
-    --enable-pic --enable-runtime-cpudetect \
-    --extra-cflags="-fPIC" \
+    --enable-pic --extra-cflags="-fPIC" \
+    --disable-asm \
     --disable-network --disable-iconv \
     --disable-everything --enable-decoder=xmaframes
 echo "::endgroup::"
