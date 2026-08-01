@@ -51,7 +51,7 @@
     <string name="error_title">Не удаётся продолжить</string>
     <string name="error_game_missing">Файлы игры не установлены. Скопируйте папки game и (по желанию) dlc из дампа Xbox 360 в:\n%1$s\n\nНе копируйте APK, файлы ПК-версии или ярлыки.</string>
     <string name="error_game_partial">Установка неполная или повреждена. Отсутствуют файлы:%1$s\n\nОжидаемый корень:\n%2$s</string>
-    <string name="error_game_nested">Файлы игры вложены не в ту папку (%1$s). Переместите папки game, update, patched и dlc прямо в:\n%2$s</string>
+    <string name="error_game_nested">Файлы игры вложены не в ту папку (%1$s). Переместите папки game и (по желанию) dlc прямо в:\n%2$s</string>
     <string name="error_settings_save">Не удалось сохранить настройки: %1$s</string>
     <string name="error_layout_editor">Не удалось запустить редактор раскладки: %1$s</string>
     <string name="error_layout_requires_game">Редактор использует рендерер игры, поэтому требуется корректная установка.</string>

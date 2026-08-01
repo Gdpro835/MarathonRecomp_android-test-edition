@@ -122,3 +122,10 @@ add_library(MarathonRecompLib
 target_include_directories(MarathonRecompLib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_include_directories(MarathonRecompLib PRIVATE "${MARATHON_RECOMP_TOOLS_ROOT}/XenonRecomp/thirdparty/simde")
 target_precompile_headers(MarathonRecompLib PUBLIC "ppc/ppc_recomp_shared.h")
+
+# Pulls ppc/ppc_detail.h (tracked, unlike the generated rest of ppc/) into the
+# generated ppc_config.h: hardens PPC_CALL_INDIRECT_FUNC against out-of-range
+# and unmapped targets (Android crash: indirect call through guest null).
+# PUBLIC so every TU that includes the ppc headers sees the same macro
+# definition as the precompiled header.
+target_compile_definitions(MarathonRecompLib PUBLIC PPC_INCLUDE_DETAIL)

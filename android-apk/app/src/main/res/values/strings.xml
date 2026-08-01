@@ -52,7 +52,7 @@
     <string name="error_storage_write">The game folder is not writable:\n%1$s\n\nIt may have been created by adb or another user. Delete it and let the app recreate it.</string>
     <string name="error_game_missing">Game files are not installed. Copy the extracted Xbox 360 dump folders game and optional dlc into:\n%1$s\n\nDo not copy an APK, PC game files or a shortcut.</string>
     <string name="error_game_partial">The installation is incomplete or damaged. Missing required files:%1$s\n\nExpected root:\n%2$s</string>
-    <string name="error_game_nested">Game files appear to be nested in the wrong folder (%1$s). Move game, update, patched and optional dlc folders directly into:\n%2$s</string>
+    <string name="error_game_nested">Game files appear to be nested in the wrong folder (%1$s). Move game and optional dlc folders directly into:\n%2$s</string>
     <string name="error_settings_save">Could not save settings: %1$s</string>
     <string name="error_layout_editor">Could not start the layout editor: %1$s</string>
     <string name="error_layout_requires_game">The layout editor uses the game renderer, so a valid game installation is required.</string>

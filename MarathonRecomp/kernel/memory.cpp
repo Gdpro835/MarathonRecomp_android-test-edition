@@ -1,5 +1,8 @@
 #include <stdafx.h>
 #include "memory.h"
+#include <os/logger.h>
+
+#include <atomic>
 
 Memory::Memory()
 {
@@ -44,4 +47,19 @@ Memory::Memory()
 void* MmGetHostAddress(uint32_t ptr)
 {
     return g_memory.Translate(ptr);
+}
+
+// Called from the hardened PPC_CALL_INDIRECT_FUNC (MarathonRecompLib/ppc/ppc_detail.h)
+// when an indirect call's target is outside the recompiled code range or resolves to no
+// host function - a wild jump the process could never survive. Skipping the call keeps
+// the half-constructed-state races (indirect call through guest null while loading
+// archives) non-fatal; the log keeps them visible.
+extern "C" void PPCIndirectCallMissing(PPCContext& ctx, uint8_t* base, uint32_t target)
+{
+    static std::atomic<uint32_t> s_reportCount{ 0 };
+    if (s_reportCount.fetch_add(1, std::memory_order_relaxed) < 16)
+    {
+        LOGF_ERROR("Indirect call to unmapped guest address {:08X} skipped (r3={:08X}).",
+            target, ctx.r3.u32);
+    }
 }

@@ -247,11 +247,12 @@ public final class LauncherActivity extends Activity {
             return new InstallState(false, getString(R.string.error_storage_write, root));
         }
 
-        // patched/default.xex is intentionally not required here: since the raw-dump
-        // installer landed, the native side creates it from game+update on first boot.
+        // Sonic the Hedgehog (2006) has no title update: the dump is just
+        // game/ (+ optional dlc/), so only game/default.xex is required here.
+        // Each DLC directory is validated by the download.arc marker the native
+        // installer writes (see install/installer.cpp DLCValidationFile).
         LinkedHashMap<String, File> required = new LinkedHashMap<>();
         required.put("game/default.xex", new File(root, "game/default.xex"));
-        required.put("update/default.xexp", new File(root, "update/default.xexp"));
         List<String> missing = new ArrayList<>();
         for (Map.Entry<String, File> item : required.entrySet()) {
             if (!item.getValue().isFile() || item.getValue().length() == 0) {
@@ -260,8 +261,7 @@ public final class LauncherActivity extends Activity {
         }
         if (!missing.isEmpty()) {
             File misplaced = findFile(root, "default.xex", 3);
-            if (misplaced != null && !misplaced.equals(required.get("game/default.xex")) &&
-                !misplaced.equals(new File(root, "patched/default.xex"))) {
+            if (misplaced != null && !misplaced.equals(required.get("game/default.xex"))) {
                 return new InstallState(false, getString(R.string.error_game_nested,
                     relativePath(root, misplaced), root));
             }
@@ -275,7 +275,7 @@ public final class LauncherActivity extends Activity {
 
         int dlc = 0;
         for (String directory : DLC_DIRECTORIES) {
-            if (new File(root, "dlc/" + directory + "/DLC.xml").isFile()) dlc++;
+            if (new File(root, "dlc/" + directory + "/download.arc").isFile()) dlc++;
         }
         return new InstallState(true, dlc == DLC_DIRECTORIES.length
             ? getString(R.string.game_ready_all_dlc)
