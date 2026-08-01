@@ -249,6 +249,18 @@ namespace plume {
             return VK_FORMAT_BC7_UNORM_BLOCK;
         case RenderFormat::BC7_UNORM_SRGB:
             return VK_FORMAT_BC7_SRGB_BLOCK;
+        case RenderFormat::ETC2_RGB8_UNORM:
+            return VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK;
+        case RenderFormat::ETC2_RGB8_UNORM_SRGB:
+            return VK_FORMAT_ETC2_R8G8B8_SRGB_BLOCK;
+        case RenderFormat::ETC2_RGBA8_UNORM:
+            return VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK;
+        case RenderFormat::ETC2_RGBA8_UNORM_SRGB:
+            return VK_FORMAT_ETC2_R8G8B8A8_SRGB_BLOCK;
+        case RenderFormat::EAC_R11_UNORM:
+            return VK_FORMAT_EAC_R11_UNORM_BLOCK;
+        case RenderFormat::EAC_R11G11_UNORM:
+            return VK_FORMAT_EAC_R11G11_UNORM_BLOCK;
         default:
             assert(false && "Unknown format.");
             return VK_FORMAT_UNDEFINED;
@@ -3961,6 +3973,15 @@ namespace plume {
             vkGetPhysicalDeviceProperties2(physicalDevice, &deviceProperties2);
         }
 
+        // Descriptor-set size limits (Vulkan 1.2 properties) for bindless descriptor sets.
+        VkPhysicalDeviceVulkan12Properties vulkan12Properties = {};
+        vulkan12Properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES;
+
+        VkPhysicalDeviceProperties2 deviceProperties2 = {};
+        deviceProperties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+        deviceProperties2.pNext = &vulkan12Properties;
+        vkGetPhysicalDeviceProperties2(physicalDevice, &deviceProperties2);
+
         const bool sampleLocationsFound = supportedOptionalExtensions.find(VK_EXT_SAMPLE_LOCATIONS_EXTENSION_NAME) != supportedOptionalExtensions.end();
         if (sampleLocationsFound) {
             sampleLocationProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SAMPLE_LOCATIONS_PROPERTIES_EXT;
@@ -4178,6 +4199,15 @@ namespace plume {
         capabilities.resolveModes = false;
         capabilities.descriptorIndexing = descriptorIndexingSupported;
         capabilities.scalarBlockLayout = scalarBlockLayoutSupported;
+        capabilities.textureCompressionBC = deviceFeatures.features.textureCompressionBC;
+        capabilities.textureCompressionETC2 = deviceFeatures.features.textureCompressionETC2;
+        if (descriptorIndexingSupported) {
+            capabilities.maxSampledImageDescriptors = std::min(vulkan12Properties.maxDescriptorSetUpdateAfterBindSampledImages, vulkan12Properties.maxPerStageDescriptorUpdateAfterBindSampledImages);
+            capabilities.maxSamplerDescriptors = std::min(vulkan12Properties.maxDescriptorSetUpdateAfterBindSamplers, vulkan12Properties.maxPerStageDescriptorUpdateAfterBindSamplers);
+        } else {
+            capabilities.maxSampledImageDescriptors = std::min(physicalDeviceProperties.limits.maxDescriptorSetSampledImages, physicalDeviceProperties.limits.maxPerStageDescriptorSampledImages);
+            capabilities.maxSamplerDescriptors = std::min(physicalDeviceProperties.limits.maxDescriptorSetSamplers, physicalDeviceProperties.limits.maxPerStageDescriptorSamplers);
+        }
         capabilities.bufferDeviceAddress = bufferDeviceAddressSupported;
         capabilities.samplerMirrorClampToEdge = supportedOptionalExtensions.find(VK_KHR_SAMPLER_MIRROR_CLAMP_TO_EDGE_EXTENSION_NAME) != supportedOptionalExtensions.end();
         capabilities.presentWait = presentWaitSupported;
