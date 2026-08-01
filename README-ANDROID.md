@@ -52,6 +52,40 @@ For the smoothest first run, start with the default graphics settings. The Andro
 
 No PC is required at any point.
 
+## Building the APK with GitHub Actions (no local toolchain, no secrets)
+
+The repository ships a workflow (`tools/ci/build-android-apk.yml`) that builds the
+APK in the cloud fully automatically. You only need to provide the **game files**
+through a public link:
+
+1. Pack a zip containing the game files (any folder layout — they are found
+   automatically):
+   ```
+   default.xex
+   shader.arc
+   shader_lt.arc
+   ```
+   (Optional: add `drivers/*.so` to bundle Turnip driver builds. Without them
+   the app uses the system Vulkan driver.)
+2. Upload the zip somewhere public — Google Drive or HuggingFace both work.
+3. Run the **Build Android APK** workflow: in the repo, go to *Actions → Build Android APK → Run workflow* and paste the link into the `build_files_url` field. Alternatively set it once as the repository variable `BUILD_FILES_URL` (*Settings → Secrets and variables → Actions → Variables*).
+
+Everything else is automatic:
+- all git submodules are initialized by the workflow,
+- **ffmpeg for Android is built from source** (7.1.1 + the XMA decoder patch)
+  by `tools/ci/build_ffmpeg_android.sh` — no prebuilt ffmpeg zip needed,
+- the host recompiler tools are built, `libmain.so` is cross-compiled with the
+  NDK, the debug APK is assembled and uploaded as a workflow artifact
+  (installable — signed with the Android debug key).
+
+> **Note on the workflow location:** GitHub only auto-runs workflows from
+> `.github/workflows/`. This copy is kept in `tools/ci/` so it can be versioned
+> and pushed without extra repository permissions. To activate it, copy it to
+> `.github/workflows/build-android-apk.yml` (GitHub UI: *Add file → Upload files*,
+> or locally), then run it from the Actions tab.
+
+No secrets, no keystore, no local Android SDK/NDK needed.
+
 ## Building the APK from source
 
 ### 1. Clone with submodules
