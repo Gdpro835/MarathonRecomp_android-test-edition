@@ -99,6 +99,13 @@ jobs:
             exit 1
           fi
 
+          # Исправленный вариант принятия лицензий без Broken pipe
+          echo "y" | "$sdkmanager_bin" --licenses >/dev/null || true
+          
+          "$sdkmanager_bin" --install "platforms;android-34" "build-tools;34.0.0" "ndk;${NDK_VERSION}" >/dev/null
+          echo "ANDROID_NDK_HOME=$sdk_root/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+
+
           yes | "$sdkmanager_bin" --licenses >/dev/null || true
           "$sdkmanager_bin" --install "platforms;android-34" "build-tools;34.0.0" "ndk;${NDK_VERSION}" >/dev/null
           echo "ANDROID_NDK_HOME=$sdk_root/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
@@ -132,10 +139,15 @@ jobs:
 
       - name: Build host tools
         run: |
+          # Принудительно используем Clang для сборки инструментов хоста
+          export CC=clang
+          export CXX=clang++
+          
           cmake -S . -B out/build/linux-host-tools -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DMARATHON_RECOMP_HOST_TOOLS_ONLY=ON
           cmake --build out/build/linux-host-tools --target XenonRecomp XenosRecomp file_to_c u8extract -j2
+
 
       - name: Build ffmpeg for Android (automatic)
         run: |
