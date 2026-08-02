@@ -19,6 +19,7 @@
 #include <sys/system_properties.h>
 #include <ucontext.h>
 #include <unistd.h>
+#include <unwind.h>
 
 #define ANDROID_LOG_TAG "MarathonRecomp"
 
@@ -353,6 +354,26 @@ static void CrashWriteAddress(int fd, const char* label, uint64_t address)
     }
 }
 
+struct CrashUnwindState
+{
+    int fd;
+    uint32_t frame;
+};
+
+static _Unwind_Reason_Code CrashUnwindCallback(_Unwind_Context* context, void* arg)
+{
+    auto* state = static_cast<CrashUnwindState*>(arg);
+    const uintptr_t address = _Unwind_GetIP(context);
+    if (address == 0 || state->frame >= 64)
+        return _URC_END_OF_STACK;
+
+    CrashWriteRaw(state->fd, "[crash] #");
+    CrashWriteDec(state->fd, state->frame++);
+    CrashWriteAddress(state->fd, " ", address);
+    CrashWriteRaw(state->fd, "\\n");
+    return _URC_NO_REASON;
+}
+
 static void CrashSignalHandler(int signal, siginfo_t* info, void* contextPtr)
 {
     const int fd = s_logRawFd.load(std::memory_order_acquire);
@@ -394,6 +415,11 @@ static void CrashSignalHandler(int signal, siginfo_t* info, void* contextPtr)
         }
 #endif
 
+        // Best-effort native unwind. The system tombstone remains authoritative,
+        // but this puts useful module+offset frames in log.txt without adb/root.
+        CrashUnwindState unwindState{ fd, 0 };
+        CrashWriteRaw(fd, "[crash] backtrace (best effort):\n");
+        _Unwind_Backtrace(CrashUnwindCallback, &unwindState);
         CrashWriteRaw(fd, "[crash] end of report; the system tombstone (if any) has the full backtrace.\n");
     }
 
