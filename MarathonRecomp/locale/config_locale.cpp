@@ -938,12 +938,9 @@ CONFIG_DEFINE_ENUM_LOCALE(EAndroidVulkanDriver)
     {
         ELanguage::English,
         {
-            { EAndroidVulkanDriver::Auto,              { "AUTO", "Auto: use the bundled driver on Adreno GPUs, otherwise the system driver." } },
-            { EAndroidVulkanDriver::System,            { "SYSTEM", "System: use the device's own Vulkan driver." } },
-            { EAndroidVulkanDriver::Bundled,           { "BUNDLED", "Bundled: use the Turnip driver bundled in the app." } },
-            { EAndroidVulkanDriver::Imported,          { "IMPORTED", "Imported: use the driver imported from the launcher." } },
-            { EAndroidVulkanDriver::Vauzi710,          { "AD 710 (VAUZI)", "Adreno 710 Vauzi: community driver for Adreno 710 devices." } },
-            { EAndroidVulkanDriver::ExperimentalA725,  { "A725 EXP", "A725 Performance (experimental): community driver for Adreno 725; forces sysmem rendering." } }
+            { EAndroidVulkanDriver::Auto,              { "AUTO", "Automatically select the safe driver for the device." } },
+            { EAndroidVulkanDriver::System,            { "SYSTEM", "Use the device's own Vulkan driver." } },
+            { EAndroidVulkanDriver::Imported,          { "IMPORTED", "Use a driver imported from the launcher." } }
         }
     }
 };
