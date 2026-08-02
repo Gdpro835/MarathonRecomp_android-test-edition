@@ -695,9 +695,9 @@ CONFIG_DEFINE_LOCALE(VSync)
 
 CONFIG_DEFINE_LOCALE(FPS)
 {
-    { ELanguage::English,  { "FPS", "Set the max frame rate the game can run at. WARNING: this may introduce glitches at frame rates other than 60 FPS." } },
-    { ELanguage::Japanese, { "フレームレート上限", "ゲームが実行できる最大フレームレートを設定します　警告:60FPS以外のフレームレートでは不具合が発生する可能性があります" } },
-    { ELanguage::German,   { "FPS", "Bestimmt die maximale Bildwiederholrate. WARNUNG: es können Fehler bei einer Bildwiederholrate über 60 FPS auftreten." } },
+    { ELanguage::English,  { "FPS", "Set the maximum frame rate. WARNING: 60 FPS and higher may make the game unstable, cause glitches, or break gameplay. 30 FPS is recommended on Android." } },
+    { ELanguage::Japanese, { "フレームレート上限", "最大フレームレートを設定します。警告:60FPS以上ではゲームが不安定になり、不具合やゲームプレイの問題が発生する可能性があります。Androidでは30FPSを推奨します" } },
+    { ELanguage::German,   { "FPS", "Legt die maximale Bildrate fest. WARNUNG: Bei 60 FPS oder mehr kann das Spiel instabil werden und Fehler verursachen. Für Android werden 30 FPS empfohlen." } },
     { ELanguage::French,   { "IPS", "Limiter le nombre d'images par seconde. ATTENTION : Cela peut provoquer des bugs à des fréquences autres que 60 IPS." } },
     { ELanguage::Spanish,  { "FPS", "Establece la tasa máxima de fotogramas a la que puede ejecutarse el juego. ADVERTENCIA: esto puede provocar fallos en velocidades distintas a 60 FPS." } },
     { ELanguage::Italian,  { "FPS", "Imposta il framerate massimo del gioco. ATTENZIONE: questa opzione può causare problemi con dei framerate rate superiori a 60 FPS." } }
