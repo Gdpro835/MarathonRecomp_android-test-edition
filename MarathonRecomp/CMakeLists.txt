@@ -399,6 +399,21 @@ elseif (ANDROID)
     # than a standalone executable, since Android apps cannot be launched as bare ELF binaries.
     add_library(MarathonRecomp SHARED ${MARATHON_RECOMP_CXX_SOURCES})
     set_target_properties(MarathonRecomp PROPERTIES OUTPUT_NAME "main")
+
+    # Keep the Android release build focused on CPU-side guest emulation and
+    # command recording. The default Android toolchain flags vary between NDKs;
+    # explicitly enable the optimized release profile without using device-specific
+    # instructions, so the same APK remains valid across ARM64 phones.
+    if (CMAKE_BUILD_TYPE MATCHES "Release")
+        target_compile_options(MarathonRecomp PRIVATE
+            -O3
+            -ffunction-sections
+            -fdata-sections
+        )
+        target_link_options(MarathonRecomp PRIVATE
+            -Wl,--gc-sections
+        )
+    endif()
 else()
     add_executable(MarathonRecomp ${MARATHON_RECOMP_CXX_SOURCES})
 endif()
