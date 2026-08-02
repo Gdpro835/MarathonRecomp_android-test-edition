@@ -42,7 +42,7 @@
     <string name="launcher_play">Запустить игру</string>
     <string name="launcher_driver_pending">Пакетов драйвера для установки: %1$d.</string>
     <string name="launcher_driver_installed">Импортированный драйвер: %1$s</string>
-    <string name="launcher_driver_builtin">Доступны встроенные Turnip и системный драйвер. Импортированных драйверов нет.</string>
+    <string name="launcher_driver_builtin">Доступны автоматический, системный и импортированный Vulkan-драйверы. Импортированных драйверов нет.</string>
     <string name="launcher_driver_recovery">Предыдущий запуск Vulkan не завершился. Автовосстановление использует безопасный драйвер; если проблема повторится, выберите System.</string>
     <string name="launcher_log_found">Последний журнал (%1$s).</string>
     <string name="launcher_log_missing">Журнала пока нет. Он создаётся при запуске игры.</string>
@@ -78,7 +78,7 @@
     <string name="error_install_no_mod">В выбранном источнике нет mod.ini, поэтому мод не найден.</string>
 
     <string-array name="driver_labels">
-        <item>Авто (рекомендуется)</item><item>Системный</item><item>Встроенный Turnip</item><item>Adreno 710 (Vauzi)</item><item>A725 Performance (экспериментальный; sysmem+nobin)</item><item>Импортированный</item>
+        <item>Авто (рекомендуется)</item><item>Системный</item><item>Импортированный</item>
     </string-array>
     <string-array name="render_mode_labels">
         <item>Авто (рекомендуется)</item><item>GMEM</item><item>Sysmem</item>

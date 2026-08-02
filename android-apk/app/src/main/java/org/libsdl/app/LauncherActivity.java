@@ -47,12 +47,10 @@ public final class LauncherActivity extends Activity {
     private static final int REQUEST_MOD_ZIP = 1004;
     private static final int REQUEST_MOD_TREE = 1005;
     private static final int REQUEST_GAME_PACKAGES = 1006;
-    private static final int DRIVER_EXPERIMENTAL_A725 = 4;
-    private static final int DRIVER_IMPORTED = 5;
-    private static final int RENDER_MODE_SYSMEM = 2;
+    private static final int DRIVER_IMPORTED = 2;
     private static final long UPDATE_CHECK_INTERVAL_MS = 6L * 60 * 60 * 1000;
     private static final String[] DRIVER_VALUES = {
-        "Auto", "System", "Bundled", "Vauzi710", "ExperimentalA725", "Imported"
+        "Auto", "System", "Imported"
     };
     private static final String[] RENDER_MODE_VALUES = {"Auto", "GMEM", "Sysmem"};
     private static final String[] DLC_DIRECTORIES = {
@@ -912,10 +910,10 @@ public final class LauncherActivity extends Activity {
     }
 
     private void applyDriverPresetToLauncher() {
+        // Experimental bundled drivers are intentionally not exposed by the launcher.
+        // Keep render-mode selection independent for Auto/System/Imported.
         if (driverSpinner == null || renderSpinner == null) return;
-        boolean experimentalA725 = driverSpinner.getSelectedItemPosition() == DRIVER_EXPERIMENTAL_A725;
-        if (experimentalA725) renderSpinner.setSelection(RENDER_MODE_SYSMEM);
-        renderSpinner.setEnabled(!experimentalA725);
+        renderSpinner.setEnabled(true);
     }
 
     private TextView statusText() {
