@@ -370,7 +370,7 @@ static _Unwind_Reason_Code CrashUnwindCallback(_Unwind_Context* context, void* a
     CrashWriteRaw(state->fd, "[crash] #");
     CrashWriteDec(state->fd, state->frame++);
     CrashWriteAddress(state->fd, " ", address);
-    CrashWriteRaw(state->fd, "\\n");
+    CrashWriteRaw(state->fd, "\n");
     return _URC_NO_REASON;
 }
 
