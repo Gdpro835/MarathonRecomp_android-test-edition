@@ -86,7 +86,7 @@ CONFIG_DEFINE_LOCALISED("Video", float, Brightness, 0.5f, false);
 #ifdef __ANDROID__
 CONFIG_DEFINE_ENUM_LOCALISED("Video", EAntiAliasing, AntiAliasing, EAntiAliasing::Off, false);
 CONFIG_DEFINE_LOCALISED("Video", bool, TransparencyAntiAliasing, false, false);
-CONFIG_DEFINE("Video", uint32_t, AnisotropicFiltering, 4, false);
+CONFIG_DEFINE("Video", uint32_t, AnisotropicFiltering, 1, false);
 #else
 CONFIG_DEFINE_ENUM_LOCALISED("Video", EAntiAliasing, AntiAliasing, EAntiAliasing::MSAA4x, false);
 CONFIG_DEFINE_LOCALISED("Video", bool, TransparencyAntiAliasing, true, false);
