@@ -66,7 +66,7 @@ CONFIG_DEFINE_ENUM_LOCALISED("Video", EAspectRatio, AspectRatio, EAspectRatio::A
 // The Adreno-class mobile GPUs this port targets sit at ~40 ms/frame at native
 // resolution; 50% scale + no MSAA is the measured sweet spot for playable
 // framerates, so the Android build defaults there instead of the desktop values.
-CONFIG_DEFINE_LOCALISED("Video", float, ResolutionScale, 0.5f, false);
+CONFIG_DEFINE_LOCALISED("Video", float, ResolutionScale, 0.25f, false);
 #else
 CONFIG_DEFINE_LOCALISED("Video", float, ResolutionScale, 1.0f, false);
 #endif

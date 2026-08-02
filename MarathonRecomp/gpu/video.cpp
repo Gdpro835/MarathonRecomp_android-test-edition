@@ -1933,7 +1933,7 @@ static void ApplyLowEndDefaults()
     // logic. Users who already saved a value are never overridden.
     // MSAA triggers rendering artifacts on Turnip a7xx gen3 and is never worth its cost here.
     ApplyLowEndDefault(Config::AntiAliasing, EAntiAliasing::Off, changed);
-    ApplyLowEndDefault(Config::ResolutionScale, 0.5f, changed);
+    ApplyLowEndDefault(Config::ResolutionScale, 0.25f, changed);
     ApplyLowEndDefault(Config::ShadowResolution, EShadowResolution::x512, changed);
     ApplyLowEndDefault(Config::ReflectionResolution, EReflectionResolution::Eighth, changed);
     ApplyLowEndDefault(Config::AnisotropicFiltering, uint32_t(1), changed);
