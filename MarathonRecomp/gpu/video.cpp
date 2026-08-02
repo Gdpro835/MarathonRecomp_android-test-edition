@@ -2141,6 +2141,14 @@ bool Video::CreateHostDevice(const char *sdlVideoDriver, bool graphicsApiRetry)
             g_textureDescriptorSize, g_samplerDescriptorSize);
     }
 
+#ifdef __ANDROID__
+    // Apply the mobile profile before creating any embedded textures/shaders.
+    // Previously this happened after LoadEmbeddedResources(), so a fresh Android
+    // install could initialize Mali with desktop-sized reflection/shadow targets
+    // before the safe settings were saved.
+    ApplyLowEndDefaults();
+#endif
+
     LoadEmbeddedResources();
 
     constexpr uint64_t LowEndMemoryLimit = 2048ULL * 1024ULL * 1024ULL;
