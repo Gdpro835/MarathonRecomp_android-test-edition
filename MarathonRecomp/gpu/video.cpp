@@ -1927,13 +1927,24 @@ static void ApplyLowEndDefaults()
     bool changed = false;
 
 #ifdef __ANDROID__
+    // Mobile GPUs are generally UMA and report either zero dedicated VRAM or a
+    // very small budget. Keep the first-run profile conservative: these settings
+    // remove several full-screen/large render-target costs without changing game
+    // logic. Users who already saved a value are never overridden.
     // MSAA triggers rendering artifacts on Turnip a7xx gen3 and is never worth its cost here.
     ApplyLowEndDefault(Config::AntiAliasing, EAntiAliasing::Off, changed);
+    ApplyLowEndDefault(Config::ResolutionScale, 0.5f, changed);
+    ApplyLowEndDefault(Config::ShadowResolution, EShadowResolution::x512, changed);
+    ApplyLowEndDefault(Config::ReflectionResolution, EReflectionResolution::Eighth, changed);
+    ApplyLowEndDefault(Config::AnisotropicFiltering, uint32_t(1), changed);
+    ApplyLowEndDefault(Config::RadialBlur, ERadialBlur::Off, changed);
 #else
     ApplyLowEndDefault(Config::AntiAliasing, EAntiAliasing::MSAA2x, changed);
 #endif
+#ifndef __ANDROID__
     ApplyLowEndDefault(Config::ShadowResolution, EShadowResolution::x1024, changed);
     ApplyLowEndDefault(Config::ReflectionResolution, EReflectionResolution::Quarter, changed);
+#endif
     ApplyLowEndDefault(Config::TransparencyAntiAliasing, false, changed);
 
     if (changed) 
@@ -2137,12 +2148,18 @@ bool Video::CreateHostDevice(const char *sdlVideoDriver, bool graphicsApiRetry)
     bool lowEndType = deviceDescription.type != RenderDeviceType::UNKNOWN && deviceDescription.type != RenderDeviceType::DISCRETE;
     bool lowEndMemory = deviceDescription.dedicatedVideoMemory < LowEndMemoryLimit;
     bool lowEndUMA = deviceDescription.type == RenderDeviceType::UNKNOWN && g_capabilities.uma;
+#ifdef __ANDROID__
+    // Android device-memory reporting is inconsistent (notably on Adreno/Turnip),
+    // so do not let a bogus large VRAM value skip the mobile profile.
+    ApplyLowEndDefaults();
+#else
     if (lowEndType || lowEndMemory || lowEndUMA)
     {
         // Switch to low end defaults if a non-discrete GPU was detected or a low amount of VRAM was detected.
         // Checking for UMA on D3D12 seems to be a reliable way to detect integrated GPUs.
         ApplyLowEndDefaults();
     }
+#endif
 
     const RenderSampleCounts colourSampleCount = g_device->getSampleCountsSupported(RenderFormat::R16G16B16A16_FLOAT);
     const RenderSampleCounts depthSampleCount  = g_device->getSampleCountsSupported(RenderFormat::D32_FLOAT);
