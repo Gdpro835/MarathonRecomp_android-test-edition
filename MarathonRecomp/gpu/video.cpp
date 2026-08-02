@@ -2135,6 +2135,28 @@ bool Video::CreateHostDevice(const char *sdlVideoDriver, bool graphicsApiRetry)
     if (g_capabilities.maxSamplerDescriptors != 0)
         g_samplerDescriptorSize = uint32_t(std::min<size_t>(SAMPLER_DESCRIPTOR_SIZE, g_capabilities.maxSamplerDescriptors));
 
+#if defined(__ANDROID__)
+    // Stock Mali Vulkan drivers are considerably less tolerant of optional paths
+    // than Adreno/Turnip. Keep the device on the conservative render path: these
+    // features are optional and their absence is already handled by the renderer.
+    // In particular, do not submit upload-heap or present-wait operations on Mali.
+    {
+        std::string deviceName = g_device->getDescription().name;
+        std::transform(deviceName.begin(), deviceName.end(), deviceName.begin(),
+            [](unsigned char c) { return char(std::tolower(c)); });
+        if (deviceName.find("mali") != std::string::npos || deviceName.find("meow") != std::string::npos)
+        {
+            g_capabilities.gpuUploadHeap = false;
+            g_capabilities.presentWait = false;
+            g_capabilities.displayTiming = false;
+            g_capabilities.resolveModes = false;
+            g_capabilities.resolveRegion = false;
+            g_capabilities.dynamicDepthBias = false;
+            LOG("Mali compatibility path: conservative Vulkan capabilities enabled.");
+        }
+    }
+#endif
+
     if (g_textureDescriptorSize < TEXTURE_DESCRIPTOR_SIZE || g_samplerDescriptorSize < SAMPLER_DESCRIPTOR_SIZE)
     {
         LOGF_WARNING("Descriptor set sizes clamped to device limits: {} textures, {} samplers.",
