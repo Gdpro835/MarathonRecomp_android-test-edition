@@ -97,7 +97,15 @@ CONFIG_DEFINE_ENUM_LOCALISED("Video", EAndroidVulkanDriver, VulkanDriver, EAndro
 CONFIG_DEFINE_ENUM_LOCALISED("Video", EAndroidRenderMode, RenderMode, EAndroidRenderMode::Auto, true);
 #endif
 CONFIG_DEFINE_ENUM_LOCALISED("Video", EShadowResolution, ShadowResolution, EShadowResolution::x4096, false);
+#ifdef __ANDROID__
+// Reflections are especially expensive on mobile GPUs and can exhaust the
+// render-target budget on water-heavy stages such as Wave Ocean. Start with
+// the lowest reflection target; users can raise it manually if their device
+// has enough headroom.
+CONFIG_DEFINE_ENUM_LOCALISED("Video", EReflectionResolution, ReflectionResolution, EReflectionResolution::Eighth, false);
+#else
 CONFIG_DEFINE_ENUM_LOCALISED("Video", EReflectionResolution, ReflectionResolution, EReflectionResolution::Half, false);
+#endif
 CONFIG_DEFINE_ENUM_LOCALISED("Video", ERadialBlur, RadialBlur, ERadialBlur::Original, false);
 CONFIG_DEFINE_ENUM_LOCALISED("Video", ECutsceneAspectRatio, CutsceneAspectRatio, ECutsceneAspectRatio::Original, false);
 CONFIG_DEFINE_ENUM_LOCALISED("Video", EUIAlignmentMode, UIAlignmentMode, EUIAlignmentMode::Edge, false);
