@@ -2121,6 +2121,23 @@ bool Video::CreateHostDevice(const char *sdlVideoDriver, bool graphicsApiRetry)
     }
 #endif
 
+#if defined(__ANDROID__)
+    // Some stock Mali Android drivers crash while creating ETC2 images produced
+    // by the BC fallback path. Prefer the slower RGBA CPU decode on Mali; it is
+    // intentionally selected before resource loading and is safer than losing
+    // the process during Vulkan image creation.
+    {
+        std::string deviceName = g_device->getDescription().name;
+        std::transform(deviceName.begin(), deviceName.end(), deviceName.begin(),
+            [](unsigned char c) { return char(std::tolower(c)); });
+        if (deviceName.find("mali") != std::string::npos || deviceName.find("meow") != std::string::npos)
+        {
+            g_capabilities.textureCompressionETC2 = false;
+            LOG("Mali compatibility path: using CPU RGBA texture fallback.");
+        }
+    }
+#endif
+
     if (!g_capabilities.textureCompressionBC)
     {
         if (g_capabilities.textureCompressionETC2)
