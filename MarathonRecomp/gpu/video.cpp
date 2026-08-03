@@ -2210,9 +2210,17 @@ bool Video::CreateHostDevice(const char *sdlVideoDriver, bool graphicsApiRetry)
     }
 #endif
 
+#ifdef __ANDROID__
+    // Avoid querying optional sample counts on Android Mali. Several stock Mali
+    // Vulkan drivers crash in this capability query even though MSAA is disabled
+    // by the mobile profile. Single-sample rendering is sufficient here.
+    const RenderSampleCounts commonSampleCount = RenderSampleCount::COUNT_1;
+    LOG("Android: skipping MSAA capability queries; using single-sample rendering.");
+#else
     const RenderSampleCounts colourSampleCount = g_device->getSampleCountsSupported(RenderFormat::R16G16B16A16_FLOAT);
     const RenderSampleCounts depthSampleCount  = g_device->getSampleCountsSupported(RenderFormat::D32_FLOAT);
     const RenderSampleCounts commonSampleCount = colourSampleCount & depthSampleCount;
+#endif
 
     // Disable specific MSAA levels if they are not supported.
     if ((commonSampleCount & RenderSampleCount::COUNT_2) == 0)
