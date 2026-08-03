@@ -2188,7 +2188,9 @@ bool Video::CreateHostDevice(const char *sdlVideoDriver, bool graphicsApiRetry)
     ApplyLowEndDefaults();
 #endif
 
+    LOG("CreateHostDevice: loading embedded shader cache.");
     LoadEmbeddedResources();
+    LOG("CreateHostDevice: embedded shader cache loaded.");
 
     constexpr uint64_t LowEndMemoryLimit = 2048ULL * 1024ULL * 1024ULL;
     RenderDeviceDescription deviceDescription = g_device->getDescription();
