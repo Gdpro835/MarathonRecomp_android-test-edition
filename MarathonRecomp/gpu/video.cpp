@@ -2233,10 +2233,14 @@ bool Video::CreateHostDevice(const char *sdlVideoDriver, bool graphicsApiRetry)
     // Set Anti-Aliasing to nearest supported level.
     Config::AntiAliasing.SnapToNearestAccessibleValue(false);
 
+    LOG("CreateHostDevice: creating direct command queue.");
     g_queue = g_device->createCommandQueue(RenderCommandListType::DIRECT);
+    LOG("CreateHostDevice: direct command queue created.");
 
+    LOG("CreateHostDevice: creating command lists.");
     for (auto& commandList : g_commandLists)
         commandList = g_queue->createCommandList();
+    LOG("CreateHostDevice: command lists created.");
 
     for (auto& commandFence : g_commandFences)
         commandFence = g_device->createCommandFence();
