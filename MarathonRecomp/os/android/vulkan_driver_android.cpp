@@ -40,17 +40,17 @@
 // android-apk/app/src/main/assets/bundled_driver/ (and keep the exact names below) before
 // building the APK, or leave the folder empty - the launcher falls back to the System
 // driver, and drivers can also be imported as .so/.zip at runtime from the launcher.
-static constexpr const char *BUNDLED_DRIVER_NAME = "vulkan.marathon_a732.so";
+static constexpr const char *BUNDLED_DRIVER_NAME = "vulkan.unleashed26_1_wfm_a732.so";
 // The asset must NOT live under "turnip/": SDL_RWFromFile resolves relative paths against
 // internal storage BEFORE the APK asset system, and the driver is extracted to the internal
 // "turnip/" directory under the same name - the extracted copy would permanently shadow the
 // packaged asset and driver updates shipped in the APK would never be seen again.
-static constexpr const char *BUNDLED_DRIVER_ASSET = "bundled_driver/vulkan.marathon_a732.so";
+static constexpr const char *BUNDLED_DRIVER_ASSET = "bundled_driver/vulkan.unleashed26_1_wfm_a732.so";
 static constexpr const char *VAUZI_710_DRIVER_NAME = "vulkan.vauzi710_v2_7.so";
 static constexpr const char *VAUZI_710_DRIVER_ASSET = "bundled_driver/vulkan.vauzi710_v2_7.so";
 static constexpr const char *EXPERIMENTAL_A725_DRIVER_NAME = "vulkan.wb26_2_rp_pair_ccu_color_a725.so";
 static constexpr const char *EXPERIMENTAL_A725_DRIVER_ASSET = "bundled_driver/vulkan.wb26_2_rp_pair_ccu_color_a725.so";
-static constexpr const char *DEFAULT_DRIVER_NAME = "vulkan.marathon_a732.so";
+static constexpr const char *DEFAULT_DRIVER_NAME = "vulkan.unleashed26_1_wfm_a732.so";
 static constexpr const char *LAST_IMPORTED_DRIVER_FILE = "last_imported_driver.txt";
 static constexpr const char *VULKAN_STARTUP_STATE_FILE = "vulkan_startup_state.txt";
 
