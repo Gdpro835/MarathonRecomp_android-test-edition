@@ -47,10 +47,10 @@ public final class LauncherActivity extends Activity {
     private static final int REQUEST_MOD_ZIP = 1004;
     private static final int REQUEST_MOD_TREE = 1005;
     private static final int REQUEST_GAME_PACKAGES = 1006;
-    private static final int DRIVER_IMPORTED = 2;
+    private static final int DRIVER_IMPORTED = 3;
     private static final long UPDATE_CHECK_INTERVAL_MS = 6L * 60 * 60 * 1000;
     private static final String[] DRIVER_VALUES = {
-        "Auto", "System", "Imported"
+        "Auto", "System", "Bundled", "Imported"
     };
     private static final String[] RENDER_MODE_VALUES = {"Auto", "GMEM", "Sysmem"};
     private static final String[] DLC_DIRECTORIES = {

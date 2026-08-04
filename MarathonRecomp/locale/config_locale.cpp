@@ -940,6 +940,7 @@ CONFIG_DEFINE_ENUM_LOCALE(EAndroidVulkanDriver)
         {
             { EAndroidVulkanDriver::Auto,              { "AUTO", "Automatically select the safe driver for the device." } },
             { EAndroidVulkanDriver::System,            { "SYSTEM", "Use the device's own Vulkan driver." } },
+            { EAndroidVulkanDriver::Bundled,           { "BUNDLED", "Use the Turnip driver bundled in the APK (Adreno only)." } },
             { EAndroidVulkanDriver::Imported,          { "IMPORTED", "Use a driver imported from the launcher." } }
         }
     }

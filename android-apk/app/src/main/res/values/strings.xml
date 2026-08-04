@@ -41,7 +41,7 @@
     <string name="launcher_play">Launch game</string>
     <string name="launcher_driver_pending">%1$d driver package(s) will be installed on the next launch.</string>
     <string name="launcher_driver_installed">Imported driver available: %1$s</string>
-    <string name="launcher_driver_builtin">Automatic, system, and imported Vulkan drivers are available. No imported driver found.</string>
+    <string name="launcher_driver_builtin">Bundled Turnip, system, automatic, and imported Vulkan drivers are available. No imported driver found.</string>
     <string name="launcher_driver_recovery">The previous Vulkan startup did not finish. Auto recovery will use a safer driver; choose System here if the problem repeats.</string>
     <string name="launcher_log_found">Latest log found (%1$s).</string>
     <string name="launcher_log_missing">No log yet. A log is created when the game starts.</string>
@@ -79,7 +79,7 @@
     <string name="error_install_no_mod">The selected source does not contain a mod.ini, so no mod could be found in it.</string>
 
     <string-array name="driver_labels">
-        <item>Auto (recommended)</item><item>System</item><item>Imported</item>
+        <item>Auto (recommended)</item><item>System</item><item>Bundled Turnip</item><item>Imported</item>
     </string-array>
     <string-array name="render_mode_labels">
         <item>Auto (recommended)</item><item>GMEM</item><item>Sysmem</item>
