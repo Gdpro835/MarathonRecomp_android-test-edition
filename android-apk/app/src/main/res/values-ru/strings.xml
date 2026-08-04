@@ -42,7 +42,7 @@
     <string name="launcher_play">Запустить игру</string>
     <string name="launcher_driver_pending">Пакетов драйвера для установки: %1$d.</string>
     <string name="launcher_driver_installed">Импортированный драйвер: %1$s</string>
-    <string name="launcher_driver_builtin">Доступны встроенный Turnip, системный, автоматический и импортированный Vulkan-драйверы. Импортированных драйверов нет.</string>
+    <string name="launcher_driver_builtin">Доступны встроенный Turnip, системный, автоматический и импортированный Vulkan-драйверы. Если встроенный Turnip не работает, скачайте совместимый драйвер с https://github.com/K11MCH1/AdrenoToolsDrivers и импортируйте его.</string>
     <string name="launcher_driver_recovery">Предыдущий запуск Vulkan не завершился. Автовосстановление использует безопасный драйвер; если проблема повторится, выберите System.</string>
     <string name="launcher_log_found">Последний журнал (%1$s).</string>
     <string name="launcher_log_missing">Журнала пока нет. Он создаётся при запуске игры.</string>
