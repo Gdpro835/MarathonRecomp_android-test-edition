@@ -2242,11 +2242,15 @@ bool Video::CreateHostDevice(const char *sdlVideoDriver, bool graphicsApiRetry)
         commandList = g_queue->createCommandList();
     LOG("CreateHostDevice: command lists created.");
 
+    LOG("CreateHostDevice: creating command fences.");
     for (auto& commandFence : g_commandFences)
         commandFence = g_device->createCommandFence();
+    LOG("CreateHostDevice: command fences created.");
 
+    LOG("CreateHostDevice: creating query pools.");
     for (auto& queryPool : g_queryPools)
         queryPool = g_device->createQueryPool(NUM_QUERIES);
+    LOG("CreateHostDevice: query pools created.");
 
     g_copyQueue = g_device->createCommandQueue(RenderCommandListType::COPY);
     g_copyCommandList = g_copyQueue->createCommandList();
