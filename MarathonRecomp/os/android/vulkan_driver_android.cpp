@@ -1171,23 +1171,6 @@ void *AndroidGetCustomVulkanLoader()
 
     std::string gpuDescription;
     const EAndroidGpuFamily gpuFamily = DetectGpuFamily(gpuDescription);
-
-    // The bundled Vulkan Unleashed A732 build is not compatible with older
-    // Adreno 6xx GPUs. Auto must prefer the OEM driver on these devices;
-    // forcing an A7xx Turnip build produces corrupted colors/geometry even when
-    // Vulkan initialization succeeds. Users can still explicitly select an
-    // imported driver if they have a matching Adreno 6xx build.
-    std::string loweredGpuDescription = gpuDescription;
-    for (char &c : loweredGpuDescription)
-        c = char(tolower(uint8_t(c)));
-    if (g_runtimeVulkanDriver != EAndroidVulkanDriver::Imported &&
-        loweredGpuDescription.find("adreno 610") != std::string::npos)
-    {
-        LOGF_WARNING("Detected Adreno 610 ({}): using the system Vulkan driver instead of the bundled A732 Turnip driver.",
-            gpuDescription);
-        return nullptr;
-    }
-
     if (gpuFamily != EAndroidGpuFamily::Adreno && gpuFamily != EAndroidGpuFamily::Unknown)
     {
         // Auto only skips the *bundled* Turnip: an explicitly imported driver selected on a
