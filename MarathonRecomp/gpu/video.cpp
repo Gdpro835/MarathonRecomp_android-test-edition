@@ -2126,14 +2126,52 @@ bool Video::CreateHostDevice(const char *sdlVideoDriver, bool graphicsApiRetry)
     // by the BC fallback path. Prefer the slower RGBA CPU decode on Mali; it is
     // intentionally selected before resource loading and is safer than losing
     // the process during Vulkan image creation.
+    //
+    // Old-gen Adreno (a6xx, e.g. the Adreno 610 in Snapdragon 662) also gets a
+    // conservative texture path. The bundled Turnip builds advertise BC support,
+    // but on a6xx some Turnip configurations fail to sample BC textures
+    // correctly, showing rainbow/garbage patterns ("shimmer") on surfaces.
+    // Routing those textures through the ETC2/RGBA fallback path (which a6xx
+    // handles reliably) fixes it. a7xx devices (which the bundled driver is
+    // built and tested for) keep the fast native-BC path.
     {
         std::string deviceName = g_device->getDescription().name;
         std::transform(deviceName.begin(), deviceName.end(), deviceName.begin(),
             [](unsigned char c) { return char(std::tolower(c)); });
+
+        auto isAdrenoA6xx = [&deviceName]() -> bool
+        {
+            const size_t generation = deviceName.find("adreno");
+            if (generation == std::string::npos)
+                return false;
+
+            // Find the first digit after "adreno" (skipping the "(tm)" brand text).
+            const size_t firstDigit = deviceName.find_first_of("0123456789", generation);
+            if (firstDigit == std::string::npos)
+                return false;
+
+            std::string generationNumber = deviceName.substr(firstDigit);
+            const size_t nonDigit = generationNumber.find_first_not_of("0123456789");
+            if (nonDigit != std::string::npos)
+                generationNumber = generationNumber.substr(0, nonDigit);
+
+            return !generationNumber.empty() && generationNumber[0] == '6';
+        };
+
         if (deviceName.find("mali") != std::string::npos || deviceName.find("meow") != std::string::npos)
         {
             g_capabilities.textureCompressionETC2 = false;
             LOG("Mali compatibility path: using CPU RGBA texture fallback.");
+        }
+        else if (isAdrenoA6xx())
+        {
+            // Turnip on a6xx historically advertises BC but renders it as garbage
+            // in several configurations. Force the CPU BC->ETC2 transcode path,
+            // which is reliable on a6xx, instead of trusting the driver's claim.
+            g_capabilities.textureCompressionBC = false;
+            g_capabilities.textureCompressionETC2 = true;
+            g_capabilities.gpuUploadHeap = false;
+            LOG("Adreno a6xx compatibility path: forcing CPU BC->ETC2 texture transcode (fixes rainbow/garbage textures on Adreno 610-class GPUs).");
         }
     }
 #endif
@@ -2157,10 +2195,31 @@ bool Video::CreateHostDevice(const char *sdlVideoDriver, bool graphicsApiRetry)
     // than Adreno/Turnip. Keep the device on the conservative render path: these
     // features are optional and their absence is already handled by the renderer.
     // In particular, do not submit upload-heap or present-wait operations on Mali.
+    // Old-gen Adreno (a6xx) Turnip builds are likewise less reliable on the
+    // optional upload/present paths, so a6xx gets the same conservative set.
     {
         std::string deviceName = g_device->getDescription().name;
         std::transform(deviceName.begin(), deviceName.end(), deviceName.begin(),
             [](unsigned char c) { return char(std::tolower(c)); });
+
+        auto isAdrenoA6xx = [&deviceName]() -> bool
+        {
+            const size_t generation = deviceName.find("adreno");
+            if (generation == std::string::npos)
+                return false;
+
+            const size_t firstDigit = deviceName.find_first_of("0123456789", generation);
+            if (firstDigit == std::string::npos)
+                return false;
+
+            std::string generationNumber = deviceName.substr(firstDigit);
+            const size_t nonDigit = generationNumber.find_first_not_of("0123456789");
+            if (nonDigit != std::string::npos)
+                generationNumber = generationNumber.substr(0, nonDigit);
+
+            return !generationNumber.empty() && generationNumber[0] == '6';
+        };
+
         if (deviceName.find("mali") != std::string::npos || deviceName.find("meow") != std::string::npos)
         {
             g_capabilities.gpuUploadHeap = false;
@@ -2170,6 +2229,16 @@ bool Video::CreateHostDevice(const char *sdlVideoDriver, bool graphicsApiRetry)
             g_capabilities.resolveRegion = false;
             g_capabilities.dynamicDepthBias = false;
             LOG("Mali compatibility path: conservative Vulkan capabilities enabled.");
+        }
+        else if (isAdrenoA6xx())
+        {
+            g_capabilities.gpuUploadHeap = false;
+            g_capabilities.presentWait = false;
+            g_capabilities.displayTiming = false;
+            g_capabilities.resolveModes = false;
+            g_capabilities.resolveRegion = false;
+            g_capabilities.dynamicDepthBias = false;
+            LOG("Adreno a6xx compatibility path: conservative Vulkan capabilities enabled.");
         }
     }
 #endif
