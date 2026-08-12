@@ -151,12 +151,6 @@ Requires JDK 17 and the Android SDK (compileSdk 34). The debug APK lands at
 
 ### Optional: bundled drivers
 
-> **Adreno 6xx note (e.g. Adreno 610 in Snapdragon 662):** the launcher detects
-> a6xx GPUs and forces the CPU BC→ETC2 texture transcode path instead of
-> trusting Turnip's native BC sampling, which can produce rainbow/garbage
-> textures on a6xx. a7xx devices are unaffected and keep the fast native path.
-
-
 Copy community Turnip driver builds into `android-apk/app/src/main/assets/bundled_driver/`
 with the exact names from `MarathonRecomp/os/android/vulkan_driver_android.cpp`
 (`vulkan.marathon_a732.so`, `vulkan.vauzi710_v2_7.so`, `vulkan.wb26_2_rp_pair_ccu_color_a725.so`)
