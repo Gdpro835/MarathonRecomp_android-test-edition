@@ -136,43 +136,6 @@ static EAndroidGpuFamily DetectGpuFamily(std::string &description)
     return EAndroidGpuFamily::Other;
 }
 
-// The bundled driver is a Mesa Turnip WFM build tuned for a7xx-gen3 GPUs
-// (a732). It is NOT compatible with the low-end a6xx GPUs (Adreno 610/612/
-// 615/616/618/619) used by Snapdragon 4xx/6xx-class SoCs: colors/geometry
-// render corrupted even though Vulkan initialization succeeds. The HAL
-// properties used by DetectGpuFamily() only say "adreno" - they never contain
-// the model number - so the low-end a6xx class must be identified from the
-// SoC properties instead (the board platform or the SoC part number).
-static bool IsLowEndAdreno6xxSoC()
-{
-    char buffer[PROP_VALUE_MAX]{};
-
-    // ro.board.platform for the Adreno 610/612/615/616/618/619 generation:
-    //   bengal -> SM6115 (SD 662), SM4350 (SD 480), SM4250 (SD 460)
-    //   holi   -> SM6225 (SD 680)
-    //   khaje  -> SM6225-AD variants
-    __system_property_get("ro.board.platform", buffer);
-    const char *knownPlatforms[] = { "bengal", "holi", "khaje" };
-    for (const char *platform : knownPlatforms)
-    {
-        if (strcmp(buffer, platform) == 0)
-            return true;
-    }
-
-    // Fall back to the SoC part number when the platform name is not one of
-    // the known ones (custom ROMs sometimes change ro.board.platform).
-    buffer[0] = '\0';
-    __system_property_get("ro.soc.model", buffer);
-    const char *knownSocs[] = { "SM6115", "SM6225", "SM4350", "SM4250", "SM4375" };
-    for (const char *soc : knownSocs)
-    {
-        if (strcmp(buffer, soc) == 0)
-            return true;
-    }
-
-    return false;
-}
-
 static const char *VulkanDriverName(EAndroidVulkanDriver driver)
 {
     switch (driver)
@@ -1208,23 +1171,6 @@ void *AndroidGetCustomVulkanLoader()
 
     std::string gpuDescription;
     const EAndroidGpuFamily gpuFamily = DetectGpuFamily(gpuDescription);
-
-    // Low-end Adreno 6xx (Snapdragon 460/480/662/680-class): the bundled A732
-    // WFM Turnip build renders corrupted colors/geometry on these GPUs even
-    // though Vulkan initialization succeeds, so Auto prefers the OEM driver.
-    // An explicitly selected driver is still honored (Bundled to force the
-    // Turnip build for comparison, Imported for an a6xx-capable Turnip from
-    // driver_import/). Mirroring the non-Adreno auto-skip below, only the
-    // default bundled selection is redirected.
-    if (g_runtimeVulkanDriver == EAndroidVulkanDriver::Auto &&
-        driverName == BUNDLED_DRIVER_NAME && IsLowEndAdreno6xxSoC())
-    {
-        LOGF_WARNING("Detected low-end Adreno 6xx SoC: the bundled A732 WFM Turnip driver is not "
-            "compatible with this GPU (corrupted colors/geometry), using the system Vulkan driver. "
-            "Select an imported a6xx-capable Turnip build or force Bundled to override.");
-        return nullptr;
-    }
-
     if (gpuFamily != EAndroidGpuFamily::Adreno && gpuFamily != EAndroidGpuFamily::Unknown)
     {
         // Auto only skips the *bundled* Turnip: an explicitly imported driver selected on a

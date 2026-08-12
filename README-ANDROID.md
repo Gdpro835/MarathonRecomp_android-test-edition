@@ -151,14 +151,10 @@ Requires JDK 17 and the Android SDK (compileSdk 34). The debug APK lands at
 
 ### Optional: bundled drivers
 
-> **Adreno 6xx note (Snapdragon 460/480/662/680-class, Adreno 610/612/615/616/618/619):**
-> the bundled driver is a Mesa Turnip WFM build tuned for a7xx-gen3 (a732) GPUs
-> and renders corrupted colors/geometry on these older GPUs, so the launcher's
-> **Auto** mode uses the system Vulkan driver there instead. You can still pick
-> **Bundled** explicitly to force the Turnip build, or drop an a6xx-capable
-> Turnip build (e.g. a non-WFM Mesa build) into `driver_import/` and select
-> **Imported**.
-
+> **Adreno 6xx note (e.g. Adreno 610 in Snapdragon 662):** the launcher detects
+> a6xx GPUs and forces the CPU BC→ETC2 texture transcode path instead of
+> trusting Turnip's native BC sampling, which can produce rainbow/garbage
+> textures on a6xx. a7xx devices are unaffected and keep the fast native path.
 
 
 Copy community Turnip driver builds into `android-apk/app/src/main/assets/bundled_driver/`
