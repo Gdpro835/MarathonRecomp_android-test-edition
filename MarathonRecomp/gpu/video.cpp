@@ -2636,13 +2636,32 @@ static void ProcDestructResource(const RenderCommand& cmd)
 
 static uint32_t ComputeTexturePitch(GuestTexture* texture)
 {
-    return (texture->width * RenderFormatSize(texture->format) + PITCH_ALIGNMENT - 1) & ~(PITCH_ALIGNMENT - 1);
+    // RenderFormatSize returns bytes per block for block-compressed formats
+    // (BC1-BC7, ETC2/EAC) and bytes per pixel otherwise. A row of a
+    // block-compressed texture is (width / blockWidth) blocks wide, NOT
+    // `width` blocks - so Sonic 2006's DXT1/DXT4 textures created through the
+    // guest CreateTexture/LockTextureRect path were given a pitch 4x too
+    // large. The game then wrote rows 4x too far apart, and every row after
+    // the first was uploaded as garbage (rainbow/corrupt textures) on any
+    // driver.
+    const uint32_t blockWidth = RenderFormatBlockWidth(texture->format);
+    const uint32_t blocksPerRow = (texture->width + blockWidth - 1) / blockWidth;
+    const uint32_t rowBytes = blocksPerRow * RenderFormatSize(texture->format);
+    return (rowBytes + PITCH_ALIGNMENT - 1) & ~(PITCH_ALIGNMENT - 1);
+}
+
+// Block-compressed formats are 4x4 blocks, so the number of block rows is
+// height / blockHeight (blockHeight == blockWidth for every block format).
+static uint32_t ComputeTextureRowCount(GuestTexture* texture)
+{
+    const uint32_t blockHeight = RenderFormatBlockWidth(texture->format);
+    return (texture->height + blockHeight - 1) / blockHeight;
 }
 
 static void LockTextureRect(GuestTexture* texture, uint32_t, GuestLockedRect* lockedRect) 
 {
     uint32_t pitch = ComputeTexturePitch(texture);
-    uint32_t slicePitch = pitch * texture->height;
+    uint32_t slicePitch = pitch * ComputeTextureRowCount(texture);
 
     if (texture->mappedMemory == nullptr)
         texture->mappedMemory = g_userHeap.AllocPhysical(slicePitch, 0x10);
@@ -2669,14 +2688,14 @@ static void ProcUnlockTextureRect(const RenderCommand& cmd)
     FlushBarriers();
 
     uint32_t pitch = ComputeTexturePitch(args.texture);
-    uint32_t slicePitch = pitch * args.texture->height;
+    uint32_t slicePitch = pitch * ComputeTextureRowCount(args.texture);
 
     auto allocation = g_uploadAllocators[g_frame].allocate(slicePitch, PLACEMENT_ALIGNMENT);
     memcpy(allocation.memory, args.texture->mappedMemory, slicePitch);
 
     g_commandLists[g_frame]->copyTextureRegion(
         RenderTextureCopyLocation::Subresource(args.texture->texture, 0),
-        RenderTextureCopyLocation::PlacedFootprint(allocation.buffer, args.texture->format, args.texture->width, args.texture->height, 1, pitch / RenderFormatSize(args.texture->format), allocation.offset));
+        RenderTextureCopyLocation::PlacedFootprint(allocation.buffer, args.texture->format, args.texture->width, args.texture->height, 1, (pitch / RenderFormatSize(args.texture->format)) * RenderFormatBlockWidth(args.texture->format), allocation.offset));
 }
 
 static void* LockBuffer(GuestBuffer* buffer, uint32_t flags)
