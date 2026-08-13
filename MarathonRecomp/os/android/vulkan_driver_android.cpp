@@ -136,6 +136,43 @@ static EAndroidGpuFamily DetectGpuFamily(std::string &description)
     return EAndroidGpuFamily::Other;
 }
 
+// Identifies the low-end Adreno 6xx GPU generation (Adreno 610/612/615/616/
+// 618/619, used by Snapdragon 4xx/6xx-class SoCs such as SD 460/480/662/680).
+// The HAL properties used by DetectGpuFamily() only ever say "adreno" - they
+// never contain the model number - so this class must be identified from the
+// SoC properties instead (the board platform or the SoC part number). Turnip
+// rendering on this generation is known to corrupt through the GMEM path with
+// some engines, and the port's own guidance for it is to use Sysmem.
+static bool IsLowEndAdreno6xxSoC()
+{
+    char buffer[PROP_VALUE_MAX]{};
+
+    // ro.board.platform for the Adreno 610/612/615/616/618/619 generation:
+    //   bengal -> SM6115 (SD 662), SM4350 (SD 480), SM4250 (SD 460)
+    //   holi   -> SM6225 (SD 680)
+    //   khaje  -> SM6225-AD variants
+    __system_property_get("ro.board.platform", buffer);
+    const char *knownPlatforms[] = { "bengal", "holi", "khaje" };
+    for (const char *platform : knownPlatforms)
+    {
+        if (strcmp(buffer, platform) == 0)
+            return true;
+    }
+
+    // Fall back to the SoC part number when the platform name is not one of
+    // the known ones (custom ROMs sometimes change ro.board.platform).
+    buffer[0] = '\0';
+    __system_property_get("ro.soc.model", buffer);
+    const char *knownSocs[] = { "SM6115", "SM6225", "SM4350", "SM4250", "SM4375" };
+    for (const char *soc : knownSocs)
+    {
+        if (strcmp(buffer, soc) == 0)
+            return true;
+    }
+
+    return false;
+}
+
 static const char *VulkanDriverName(EAndroidVulkanDriver driver)
 {
     switch (driver)
@@ -1240,6 +1277,18 @@ void *AndroidGetCustomVulkanLoader()
     {
         effectiveRenderMode = EAndroidRenderMode::Sysmem;
         LOG("Adreno 710 Vauzi driver: Auto render mode selects Sysmem as recommended by the driver author.");
+    }
+
+    // Low-end Adreno 6xx (SD 460/480/662/680-class) Turnip renders some engines
+    // corruptly through the GMEM path (rainbow/garbage surfaces); the port's
+    // documented workaround for this GPU generation is Sysmem (TU_DEBUG=sysmem).
+    // Apply it automatically in Auto mode, exactly like the Vauzi710 precedent
+    // above. Explicit GMEM/Sysmem selection and driver_import/tu_debug.txt still
+    // take precedence (ApplyRenderMode handles the external override).
+    if (effectiveRenderMode == EAndroidRenderMode::Auto && IsLowEndAdreno6xxSoC())
+    {
+        effectiveRenderMode = EAndroidRenderMode::Sysmem;
+        LOG("Low-end Adreno 6xx SoC detected: Auto render mode selects Sysmem (avoids Turnip GMEM corruption on this GPU generation).");
     }
 
     if (g_runtimeVulkanDriver == EAndroidVulkanDriver::ExperimentalA725)
