@@ -2636,32 +2636,13 @@ static void ProcDestructResource(const RenderCommand& cmd)
 
 static uint32_t ComputeTexturePitch(GuestTexture* texture)
 {
-    // RenderFormatSize returns bytes per block for block-compressed formats
-    // (BC1-BC7, ETC2/EAC) and bytes per pixel otherwise. A row of a
-    // block-compressed texture is (width / blockWidth) blocks wide, NOT
-    // `width` blocks - so Sonic 2006's DXT1/DXT4 textures created through the
-    // guest CreateTexture/LockTextureRect path were given a pitch 4x too
-    // large. The game then wrote rows 4x too far apart, and every row after
-    // the first was uploaded as garbage (rainbow/corrupt textures) on any
-    // driver.
-    const uint32_t blockWidth = RenderFormatBlockWidth(texture->format);
-    const uint32_t blocksPerRow = (texture->width + blockWidth - 1) / blockWidth;
-    const uint32_t rowBytes = blocksPerRow * RenderFormatSize(texture->format);
-    return (rowBytes + PITCH_ALIGNMENT - 1) & ~(PITCH_ALIGNMENT - 1);
-}
-
-// Block-compressed formats are 4x4 blocks, so the number of block rows is
-// height / blockHeight (blockHeight == blockWidth for every block format).
-static uint32_t ComputeTextureRowCount(GuestTexture* texture)
-{
-    const uint32_t blockHeight = RenderFormatBlockWidth(texture->format);
-    return (texture->height + blockHeight - 1) / blockHeight;
+    return (texture->width * RenderFormatSize(texture->format) + PITCH_ALIGNMENT - 1) & ~(PITCH_ALIGNMENT - 1);
 }
 
 static void LockTextureRect(GuestTexture* texture, uint32_t, GuestLockedRect* lockedRect) 
 {
     uint32_t pitch = ComputeTexturePitch(texture);
-    uint32_t slicePitch = pitch * ComputeTextureRowCount(texture);
+    uint32_t slicePitch = pitch * texture->height;
 
     if (texture->mappedMemory == nullptr)
         texture->mappedMemory = g_userHeap.AllocPhysical(slicePitch, 0x10);
@@ -2688,14 +2669,14 @@ static void ProcUnlockTextureRect(const RenderCommand& cmd)
     FlushBarriers();
 
     uint32_t pitch = ComputeTexturePitch(args.texture);
-    uint32_t slicePitch = pitch * ComputeTextureRowCount(args.texture);
+    uint32_t slicePitch = pitch * args.texture->height;
 
     auto allocation = g_uploadAllocators[g_frame].allocate(slicePitch, PLACEMENT_ALIGNMENT);
     memcpy(allocation.memory, args.texture->mappedMemory, slicePitch);
 
     g_commandLists[g_frame]->copyTextureRegion(
         RenderTextureCopyLocation::Subresource(args.texture->texture, 0),
-        RenderTextureCopyLocation::PlacedFootprint(allocation.buffer, args.texture->format, args.texture->width, args.texture->height, 1, (pitch / RenderFormatSize(args.texture->format)) * RenderFormatBlockWidth(args.texture->format), allocation.offset));
+        RenderTextureCopyLocation::PlacedFootprint(allocation.buffer, args.texture->format, args.texture->width, args.texture->height, 1, pitch / RenderFormatSize(args.texture->format), allocation.offset));
 }
 
 static void* LockBuffer(GuestBuffer* buffer, uint32_t flags)
@@ -3739,26 +3720,25 @@ static GuestTexture* CreateTexture(uint32_t width, uint32_t height, uint32_t dep
 
     const auto texture = g_userHeap.AllocPhysical<GuestTexture>(resourceType);
 
+    // Diagnostic (logging only, no behavior change): record which guest texture
+    // formats Sonic 2006 actually creates at runtime, so test logs reveal
+    // whether DXT/BC textures really go through this path.
+    {
+        static uint32_t s_loggedCreateTextureCount;
+        if (s_loggedCreateTextureCount < 12)
+        {
+            ++s_loggedCreateTextureCount;
+            LOGF("CreateTexture diag: {}x{}x{} type={} format=0x{:08X} usage=0x{:X} -> RenderFormat {}",
+                width, height, depth, type, format, usage, uint32_t(ConvertFormat(format)));
+        }
+    }
+
     RenderTextureDesc desc;
     desc.dimension = texture->type == ResourceType::VolumeTexture ? RenderTextureDimension::TEXTURE_3D : RenderTextureDimension::TEXTURE_2D;
     desc.width = width;
     desc.height = height;
     desc.mipLevels = levels;
     desc.format = ConvertFormat(format);
-
-    // Diagnostic: log the first guest DXT (BC1/BC3) texture created through the
-    // LockTextureRect/UnlockTextureRect path so test logs confirm whether the
-    // block-aware pitch fix is actually exercised by the game.
-    if (desc.format == RenderFormat::BC1_UNORM || desc.format == RenderFormat::BC3_UNORM)
-    {
-        static bool s_loggedGuestDxtTexture;
-        if (!s_loggedGuestDxtTexture)
-        {
-            s_loggedGuestDxtTexture = true;
-            LOGF("Guest DXT texture created via CreateTexture: {}x{} format={} (block-aware pitch fix active).",
-                width, height, uint32_t(desc.format));
-        }
-    }
 
     if (texture->type == ResourceType::ArrayTexture) {
         desc.arraySize = depth;
@@ -3884,22 +3864,11 @@ static GuestSurface* CreateSurface(uint32_t width, uint32_t height, uint32_t for
         desc.mipLevels = 1;
         desc.arraySize = 1;
         // desc.multisampling.sampleCount = multiSample != 0 && Config::AntiAliasing != EAntiAliasing::None ? int32_t(Config::AntiAliasing.Value) : RenderSampleCount::COUNT_1;
-#if defined(__ANDROID__)
-        // The Xbox 360 game requests 2x/4x MSAA surfaces, but on Android the
-        // port already forces single-sample rendering everywhere else (see the
-        // MSAA capability skip in CreateHostDevice) and Turnip MSAA
-        // render/resolve handling is fragile on low-end Adreno (a6xx).
-        // Rendering every surface single-sample removes the whole MSAA
-        // resolve path (vkCmdResolveImage / resolve shaders) from the Android
-        // build, which eliminates a class of corrupt-surface artifacts there.
-        desc.multisampling.sampleCount = RenderSampleCount::COUNT_1;
-#else
         if (multiSample == 0) {
             desc.multisampling.sampleCount = RenderSampleCount::COUNT_1;
         } else {
             desc.multisampling.sampleCount = multiSample == 1 ? RenderSampleCount::COUNT_2 : RenderSampleCount::COUNT_4;
         }
-#endif
         desc.format = ConvertFormat(format);
         desc.flags = RenderFormatIsDepth(desc.format) ? RenderTextureFlag::DEPTH_TARGET : RenderTextureFlag::RENDER_TARGET;
 
@@ -6660,6 +6629,22 @@ static bool LoadTexture(GuestTexture& texture, const uint8_t* data, size_t dataS
     ddspp::Descriptor ddsDesc;
     if (ddspp::decode_header((unsigned char *)(data), ddsDesc) != ddspp::Error)
     {
+        // Diagnostic (logging only, no behavior change): reveal the DXGI
+        // formats of the .dds textures the game loads, so test logs show
+        // whether BC textures are going through the native-BC or fallback path.
+        {
+            static uint32_t s_loggedLoadTextureCount;
+            if (s_loggedLoadTextureCount < 16)
+            {
+                ++s_loggedLoadTextureCount;
+                LOGF("LoadTexture diag: {}x{}x{} mips={} array={} dxgiFormat=0x{:08X} bppOrBlock={} -> RenderFormat {} (BC support={})",
+                    ddsDesc.width, ddsDesc.height, ddsDesc.depth, ddsDesc.numMips, ddsDesc.arraySize,
+                    uint32_t(ddsDesc.format), ddsDesc.bitsPerPixelOrBlock,
+                    uint32_t(ConvertDXGIFormat(ddsDesc.format)),
+                    g_capabilities.textureCompressionBC ? 1 : 0);
+            }
+        }
+
         RenderTextureDesc desc;
         desc.dimension = ConvertTextureDimension(ddsDesc.type);
         desc.width = ddsDesc.width;

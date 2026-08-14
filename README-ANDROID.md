@@ -152,11 +152,12 @@ Requires JDK 17 and the Android SDK (compileSdk 34). The debug APK lands at
 ### Optional: bundled drivers
 
 > **Adreno 6xx / Snapdragon 662 / 680 (Adreno 610) note:** older Adreno 6xx GPUs
-> are supported. A known engine bug previously corrupted DXT (BC1/BC3) textures
-> created at runtime by giving them a row pitch 4x too large, producing
-> rainbow/garbage surfaces on **any** driver; this is fixed in the engine
-> (`ComputeTexturePitch` is now block-aware). If you still see corruption on an
-> Adreno 6xx device, try Render Mode **Sysmem** or the `noubwc` TU_DEBUG option.
+> are supported. The launcher automatically selects **Sysmem** render mode
+> (TU_DEBUG=sysmem) on these SoCs in Auto mode, which fixes corrupt video
+> playback on this GPU generation. If you still see graphical corruption,
+> capture the app log (`log.txt` via the launcher's Log button) — the build
+> logs the exact texture formats the game uses, which helps identify the
+> remaining issue.
 
 
 Copy community Turnip driver builds into `android-apk/app/src/main/assets/bundled_driver/`
