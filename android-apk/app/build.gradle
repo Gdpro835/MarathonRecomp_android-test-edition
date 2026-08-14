@@ -20,8 +20,23 @@ android {
         applicationId "com.sega.marathon"
         minSdkVersion 29
         targetSdkVersion 34
-        versionCode 1
-        versionName "1.0.0"
+        // versionCode MUST increase on every build, otherwise Android refuses to
+        // install a new APK over an already-installed one (the installer silently
+        // dismisses the dialog) and testers have to uninstall first, losing their
+        // saves/game files. The CI workflow exports APP_VERSION_STAMP = minutes
+        // since the Unix epoch before invoking Gradle, so the build stamp, the
+        // versionName and the GitHub release tag all match exactly; a local build
+        // falls back to computing the same stamp itself. Minutes-since-epoch fits
+        // well inside a 32-bit int and is strictly monotonic, so any later build
+        // installs over any earlier one.
+        def versionStamp = System.getenv("APP_VERSION_STAMP")
+        def versionCodeValue = (versionStamp != null && versionStamp.isInteger())
+            ? versionStamp.toInteger()
+            : ((System.currentTimeMillis() / 60000L) as int)
+        versionCode = versionCodeValue
+        // Human-readable mirror of the same stamp, so the launcher's version
+        // display and the in-app update check both work.
+        versionName = "1.0.0.${versionCodeValue}"
     }
     // CI provides the release keystore through environment variables (see
     // .github/workflows/android.yml); local release builds stay unsigned.

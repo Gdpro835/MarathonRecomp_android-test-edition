@@ -30,7 +30,7 @@ import java.util.Locale;
 /** GitHub release checker/downloader for issue #83. */
 final class UpdateManager {
     private static final String API_URL =
-        "https://api.github.com/repos/Player124413/MarathonRecomp/releases/latest";
+        "https://api.github.com/repos/Player124413/MarathonRecomp_android-test-edition/releases/latest";
     private static final String PREFS = "updates";
     private static final String PENDING_INSTALL = "pending_install";
     private static final long MAX_API_BYTES = 2 * 1024 * 1024;
@@ -89,7 +89,7 @@ final class UpdateManager {
                     long size = apk.optLong("size", -1);
                     if (size <= 0 || size > MAX_APK_BYTES) throw new IOException("Invalid update APK size");
                     String url = apk.optString("browser_download_url", "");
-                    if (!url.startsWith("https://github.com/Player124413/MarathonRecomp/releases/")) {
+                    if (!url.startsWith("https://github.com/Player124413/MarathonRecomp_android-test-edition/releases/")) {
                         throw new IOException("Unexpected update download URL");
                     }
                     update = new UpdateInfo(version, release.optString("body", ""), url,

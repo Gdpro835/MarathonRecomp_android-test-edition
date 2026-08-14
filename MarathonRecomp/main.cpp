@@ -345,6 +345,11 @@ int main(int argc, char *argv[])
 #endif
 
     // Check the time since the last time an update was checked. Store the new time if the difference is more than six hours.
+    // On Android the in-app update check/download/install is handled by the
+    // Java UpdateManager (launcher "Check for updates" button); the native
+    // checker only opens a browser page on desktop, so skip it on Android to
+    // avoid a pointless network request at every startup.
+#if !defined(__ANDROID__)
     constexpr double TimeBetweenUpdateChecksInSeconds = 6 * 60 * 60;
     time_t timeNow = std::time(nullptr);
     double timeDifferenceSeconds = difftime(timeNow, Config::LastChecked);
@@ -355,6 +360,7 @@ int main(int argc, char *argv[])
         Config::LastChecked = timeNow;
         Config::Save();
     }
+#endif
 
     if (Config::ShowConsole)
         os::process::ShowConsole();
