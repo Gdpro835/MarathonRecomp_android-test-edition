@@ -38,15 +38,24 @@ android {
         // display and the in-app update check both work.
         versionName = "1.0.0.${versionCodeValue}"
     }
-    // CI provides the release keystore through environment variables (see
-    // .github/workflows/android.yml); local release builds stay unsigned.
-    if (System.getenv("ANDROID_KEYSTORE_FILE") != null) {
+    // Stable signing: the repository ships a fixed keystore (android-release.p12,
+    // committed at the repo root) so EVERY build - CI and local, debug and
+    // release - is signed by the same key. Android refuses to install a new
+    // APK over an installed one with a different signature, so without this
+    // every fresh CI runner (or local machine) generates its own debug key and
+    // updates fail with "signature conflict". If the keystore is absent (e.g.
+    // fresh clone), fall back to Gradle's default debug signing so the build
+    // still completes.
+    def stableKeystore = rootProject.file("../android-release.p12")
+    def hasStableKeystore = stableKeystore.isFile()
+    if (hasStableKeystore) {
         signingConfigs {
-            ci {
-                storeFile file(System.getenv("ANDROID_KEYSTORE_FILE"))
-                storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD")
-                keyAlias System.getenv("ANDROID_KEY_ALIAS")
-                keyPassword System.getenv("ANDROID_KEY_PASSWORD")
+            stable {
+                storeFile stableKeystore
+                storePassword "marathonrecomp"
+                storeType "PKCS12"
+                keyAlias "marathon"
+                keyPassword "marathonrecomp"
             }
         }
     }
@@ -56,6 +65,13 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
             if (System.getenv("ANDROID_KEYSTORE_FILE") != null) {
                 signingConfig signingConfigs.ci
+            } else if (hasStableKeystore) {
+                signingConfig signingConfigs.stable
+            }
+        }
+        debug {
+            if (hasStableKeystore) {
+                signingConfig signingConfigs.stable
             }
         }
     }
