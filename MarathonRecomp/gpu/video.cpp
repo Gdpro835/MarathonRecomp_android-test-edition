@@ -1285,7 +1285,7 @@ static void ProcSetRenderState(const RenderCommand& cmd)
             if (s_loggedStencilEnable < 3)
             {
                 ++s_loggedStencilEnable;
-                LOGF("SetRenderState diag: D3DRS_STENCILENABLE=1 (Android depth format has no stencil aspect).");
+                LOG("SetRenderState diag: D3DRS_STENCILENABLE=1 (Android depth format has no stencil aspect).");
             }
         }
 #endif
