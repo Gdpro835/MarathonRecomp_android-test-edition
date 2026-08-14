@@ -3886,11 +3886,32 @@ static GuestSurface* CreateSurface(uint32_t width, uint32_t height, uint32_t for
         desc.depth = 1;
         desc.mipLevels = 1;
         desc.arraySize = 1;
-        // desc.multisampling.sampleCount = multiSample != 0 && Config::AntiAliasing != EAntiAliasing::None ? int32_t(Config::AntiAliasing.Value) : RenderSampleCount::COUNT_1;
-        if (multiSample == 0) {
-            desc.multisampling.sampleCount = RenderSampleCount::COUNT_1;
-        } else {
-            desc.multisampling.sampleCount = multiSample == 1 ? RenderSampleCount::COUNT_2 : RenderSampleCount::COUNT_4;
+        // The game (Sonic 2006) requests 2x/4x MSAA render targets via
+        // multiSample. Creating them unconditionally forces every MSAA surface
+        // through the resolve path (vkCmdResolveImage / resolve shaders), which
+        // produces corrupt/garbled output on Turnip (Adreno) - and this port's
+        // own comment notes "MSAA triggers rendering artifacts on Turnip".
+        // Respect the user's AntiAliasing setting like UnleashedRecomp does:
+        // on Android the default is Off, so all surfaces stay single-sample and
+        // no MSAA resolve ever runs. On desktop, enabling MSAA in settings
+        // still creates the multisampled targets as before.
+        desc.multisampling.sampleCount = multiSample != 0 && Config::AntiAliasing != EAntiAliasing::Off
+            ? int32_t(Config::AntiAliasing.Value)
+            : RenderSampleCount::COUNT_1;
+
+        // Diagnostic: log the first MSAA request so test logs show whether the
+        // game actually asks for multisampled surfaces and what we do with it.
+        if (multiSample != 0)
+        {
+            static bool s_loggedMsaaSurface;
+            if (!s_loggedMsaaSurface)
+            {
+                s_loggedMsaaSurface = true;
+                LOGF("CreateSurface diag: {}x{} format=0x{:08X} multiSample={} AntiAliasing={} -> sampleCount={}",
+                    width, height, format, multiSample,
+                    uint32_t(Config::AntiAliasing.Value),
+                    uint32_t(desc.multisampling.sampleCount));
+            }
         }
         desc.format = ConvertFormat(format);
         desc.flags = RenderFormatIsDepth(desc.format) ? RenderTextureFlag::DEPTH_TARGET : RenderTextureFlag::RENDER_TARGET;
