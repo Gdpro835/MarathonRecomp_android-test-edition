@@ -3746,6 +3746,20 @@ static GuestTexture* CreateTexture(uint32_t width, uint32_t height, uint32_t dep
     desc.mipLevels = levels;
     desc.format = ConvertFormat(format);
 
+    // Diagnostic: log the first guest DXT (BC1/BC3) texture created through the
+    // LockTextureRect/UnlockTextureRect path so test logs confirm whether the
+    // block-aware pitch fix is actually exercised by the game.
+    if (desc.format == RenderFormat::BC1_UNORM || desc.format == RenderFormat::BC3_UNORM)
+    {
+        static bool s_loggedGuestDxtTexture;
+        if (!s_loggedGuestDxtTexture)
+        {
+            s_loggedGuestDxtTexture = true;
+            LOGF("Guest DXT texture created via CreateTexture: {}x{} format={} (block-aware pitch fix active).",
+                width, height, uint32_t(desc.format));
+        }
+    }
+
     if (texture->type == ResourceType::ArrayTexture) {
         desc.arraySize = depth;
         desc.depth = 1;
@@ -3870,11 +3884,22 @@ static GuestSurface* CreateSurface(uint32_t width, uint32_t height, uint32_t for
         desc.mipLevels = 1;
         desc.arraySize = 1;
         // desc.multisampling.sampleCount = multiSample != 0 && Config::AntiAliasing != EAntiAliasing::None ? int32_t(Config::AntiAliasing.Value) : RenderSampleCount::COUNT_1;
+#if defined(__ANDROID__)
+        // The Xbox 360 game requests 2x/4x MSAA surfaces, but on Android the
+        // port already forces single-sample rendering everywhere else (see the
+        // MSAA capability skip in CreateHostDevice) and Turnip MSAA
+        // render/resolve handling is fragile on low-end Adreno (a6xx).
+        // Rendering every surface single-sample removes the whole MSAA
+        // resolve path (vkCmdResolveImage / resolve shaders) from the Android
+        // build, which eliminates a class of corrupt-surface artifacts there.
+        desc.multisampling.sampleCount = RenderSampleCount::COUNT_1;
+#else
         if (multiSample == 0) {
             desc.multisampling.sampleCount = RenderSampleCount::COUNT_1;
         } else {
             desc.multisampling.sampleCount = multiSample == 1 ? RenderSampleCount::COUNT_2 : RenderSampleCount::COUNT_4;
         }
+#endif
         desc.format = ConvertFormat(format);
         desc.flags = RenderFormatIsDepth(desc.format) ? RenderTextureFlag::DEPTH_TARGET : RenderTextureFlag::RENDER_TARGET;
 
