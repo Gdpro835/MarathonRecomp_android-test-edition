@@ -2671,6 +2671,29 @@ static void ProcUnlockTextureRect(const RenderCommand& cmd)
     uint32_t pitch = ComputeTexturePitch(args.texture);
     uint32_t slicePitch = pitch * args.texture->height;
 
+    // Diagnostic (logging only): dump the first bytes of the first DXT texture
+    // the game writes through LockTextureRect. BC1/BC3 data has low entropy and
+    // structured 8/16-byte blocks; raw RGBA has alpha=0xFF every 4th byte;
+    // swizzled/tiled data shows repeating 2x2/4x4 patterns. This tells us what
+    // the game actually stores so the right fix can be applied.
+    if (args.texture->format == RenderFormat::BC1_UNORM ||
+        args.texture->format == RenderFormat::BC3_UNORM)
+    {
+        static bool s_dumpedDxtData;
+        if (!s_dumpedDxtData)
+        {
+            s_dumpedDxtData = true;
+            const uint8_t* src = reinterpret_cast<const uint8_t*>(args.texture->mappedMemory);
+            char hex[97] = {};
+            for (uint32_t i = 0; i < 32 && i < slicePitch; i++)
+                snprintf(hex + i * 2, 3, "%02X", src[i]);
+
+            LOGF("DXT unlock diag: {}x{} format={} pitch={} slicePitch={} first32={}",
+                args.texture->width, args.texture->height,
+                uint32_t(args.texture->format), pitch, slicePitch, hex);
+        }
+    }
+
     auto allocation = g_uploadAllocators[g_frame].allocate(slicePitch, PLACEMENT_ALIGNMENT);
     memcpy(allocation.memory, args.texture->mappedMemory, slicePitch);
 
