@@ -11,7 +11,7 @@ on:
         type: string
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -257,6 +257,16 @@ jobs:
           sha256sum "$JNI_DIR"/*.so
 
       # ── APK ─────────────────────────────────────────────────────────────────
+      # APP_VERSION_STAMP = minutes since the Unix epoch. It becomes the APK's
+      # versionCode/versionName AND the GitHub release tag, so every build is
+      # strictly newer than the previous one and installs over it (no uninstall,
+      # saves/game files preserved), and the launcher's in-app update check can
+      # find and offer the new release.
+      - name: Compute version stamp
+        run: |
+          echo "APP_VERSION_STAMP=$(( $(date +%s) / 60 ))" >> "$GITHUB_ENV"
+          echo "Version stamp: ${APP_VERSION_STAMP}"
+
       - name: Assemble debug APK
         working-directory: android-apk
         run: |
@@ -276,3 +286,27 @@ jobs:
           name: MarathonRecomp-Android-libmain
           path: android-apk/app/src/main/jniLibs/arm64-v8a/libmain.so
           if-no-files-found: warn
+
+      # ── Publish GitHub release ──────────────────────────────────────────────
+      # Only for manual workflow_dispatch builds (push builds just produce the
+      # artifact). Creates a tagged release with the APK attached; the in-app
+      # "Check for updates" button then finds it and installs over the current
+      # app. Re-running with the same stamp replaces the release in place.
+      - name: Publish GitHub release
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="1.0.0.${APP_VERSION_STAMP}"
+          APK="android-apk/app/build/outputs/apk/debug/app-debug.apk"
+          test -f "$APK" || { echo "::error::APK not found for release"; exit 1; }
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG already exists, replacing its APK..."
+            gh release upload "$TAG" "$APK" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" "$APK" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "Marathon Recomp Android $TAG" \
+              --notes "Automatic build from branch ${GITHUB_REF_NAME} (${GITHUB_SHA::7})." 
+          fi
+          echo "Release: https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG"
