@@ -2,7 +2,7 @@
 
 Play the Xbox 360 version of *Sonic the Hedgehog (2006)* natively on a supported Android device.
 
-This is an unofficial Android port of [Marathon Recompiled](https://github.com/sonicnext-dev/MarathonRecomp), modelled after [UnleashedRecomp-Android](https://github.com/SansNope/UnleashedRecomp-Android). It runs the game through static recompilation rather than emulating an Xbox 360, and includes an Android app, touch controls, gamepad support, a mod manager, and an optional custom Vulkan driver for Qualcomm Adreno GPUs.
+This is an unofficial Android port of [Marathon Recompiled](https://github.com/sonicnext-dev/MarathonRecomp), modelled after [UnleashedRecomp-Android](https://github.com/SansNope/UnleashedRecomp-Android). It runs the game through static recompilation rather than emulating an Xbox 360, and includes an Android app, touch controls, gamepad support, and an optional custom Vulkan driver for Qualcomm Adreno GPUs.
 
 > [!IMPORTANT]
 > This project does not include the game. You must supply files from your own legally acquired copy of *Sonic the Hedgehog (2006)* for Xbox 360.
@@ -19,7 +19,6 @@ This is an unofficial Android port of [Marathon Recompiled](https://github.com/s
 - On-screen touch controls with multi-touch, touch camera control, and a drag-to-arrange layout editor
 - Bluetooth and USB controllers
 - Sound through speakers, wired headphones, and Bluetooth devices
-- HMM and UMM-style mods through the included manager
 - Signed in-app updates from this repository's GitHub releases
 - Optional bundled Turnip driver plus importing another driver as a plain `.so` or an AdrenoTools/ExynosTools package `.zip`
 - Game-file access through Android's system Files app
@@ -190,7 +189,6 @@ Processed packages move to `installed/` and are selected automatically. See the
 - The launcher exposes the Vulkan driver, Turnip render mode, skip-intro and diagnostic options.
 - In-game options (Input → touch controls/camera/stick, Video → resolution scale, driver, profiler) apply immediately or after restart as noted in-game.
 - Touch-control layout is arranged from the launcher (**Controls → Arrange touch controls**).
-- Mods are managed from the launcher (**Mods → Manage mods**), which writes the standard CPKREDIR/ModsDB.ini format.
 
 ## Credits
 

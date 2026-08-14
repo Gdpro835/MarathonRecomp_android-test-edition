@@ -44,8 +44,6 @@ public final class LauncherActivity extends Activity {
     private static final int REQUEST_DRIVER = 1001;
     private static final int REQUEST_GAME_ZIP = 1002;
     private static final int REQUEST_GAME_TREE = 1003;
-    private static final int REQUEST_MOD_ZIP = 1004;
-    private static final int REQUEST_MOD_TREE = 1005;
     private static final int REQUEST_GAME_PACKAGES = 1006;
     private static final int DRIVER_IMPORTED = 3;
     private static final long UPDATE_CHECK_INTERVAL_MS = 6L * 60 * 60 * 1000;
@@ -116,7 +114,7 @@ public final class LauncherActivity extends Activity {
         LinearLayout files = card(R.string.launcher_game_files);
         installStatus = statusText();
         files.addView(installStatus);
-        files.addView(button(R.string.launcher_install_game, view -> chooseInstallSource(true)));
+        files.addView(button(R.string.launcher_install_game, view -> chooseInstallSource()));
         LinearLayout fileButtons = row();
         fileButtons.addView(button(R.string.launcher_open_files, view -> openFiles("game")), weighted());
         fileButtons.addView(button(R.string.launcher_recheck, view -> refreshStatuses()), weighted());
@@ -163,14 +161,6 @@ public final class LauncherActivity extends Activity {
         Button editLayout = button(R.string.launcher_edit_layout, view -> launchLayoutEditor());
         controls.addView(editLayout);
         page.addView(controls);
-
-        LinearLayout mods = collapsibleCard(page, R.string.launcher_mods, "expand_mods", false);
-        mods.addView(text(getString(R.string.launcher_mods_summary), 14, false));
-        LinearLayout modButtons = row();
-        modButtons.addView(button(R.string.launcher_manage_mods,
-            view -> startActivity(new Intent(this, ModManagerActivity.class))), weighted());
-        modButtons.addView(button(R.string.launcher_install_mod, view -> chooseInstallSource(false)), weighted());
-        mods.addView(modButtons);
 
         LinearLayout debug = collapsibleCard(page, R.string.launcher_debug, "expand_debug", false);
         skipIntro = checkBox(R.string.launcher_skip_intro);
@@ -361,16 +351,10 @@ public final class LauncherActivity extends Activity {
         if (data.getData() == null) return;
         switch (requestCode) {
             case REQUEST_GAME_ZIP:
-                startInstall(data.getData(), true, true);
+                startInstall(data.getData(), true);
                 return;
             case REQUEST_GAME_TREE:
-                startInstall(data.getData(), false, true);
-                return;
-            case REQUEST_MOD_ZIP:
-                startInstall(data.getData(), true, false);
-                return;
-            case REQUEST_MOD_TREE:
-                startInstall(data.getData(), false, false);
+                startInstall(data.getData(), false);
                 return;
             case REQUEST_DRIVER:
                 break;
@@ -412,13 +396,11 @@ public final class LauncherActivity extends Activity {
     // folder into the game root, locating the content root automatically.
     // ------------------------------------------------------------------
 
-    private void chooseInstallSource(boolean gameFiles) {
-        String[] items = gameFiles
-            ? new String[] { getString(R.string.install_source_zip), getString(R.string.install_source_folder),
-                getString(R.string.install_source_iso_packages) }
-            : new String[] { getString(R.string.install_source_zip), getString(R.string.install_source_folder) };
+    private void chooseInstallSource() {
+        String[] items = new String[] { getString(R.string.install_source_zip), getString(R.string.install_source_folder),
+            getString(R.string.install_source_iso_packages) };
         new AlertDialog.Builder(this)
-            .setTitle(gameFiles ? R.string.launcher_install_game : R.string.launcher_install_mod)
+            .setTitle(R.string.launcher_install_game)
             .setItems(items, (dialog, which) -> {
                 if (which == 0) {
                     Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
@@ -426,10 +408,9 @@ public final class LauncherActivity extends Activity {
                     intent.setType("*/*");
                     intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[] {
                         "application/zip", "application/x-zip-compressed", "application/octet-stream" });
-                    startActivityForResult(intent, gameFiles ? REQUEST_GAME_ZIP : REQUEST_MOD_ZIP);
+                    startActivityForResult(intent, REQUEST_GAME_ZIP);
                 } else if (which == 1) {
-                    startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE),
-                        gameFiles ? REQUEST_GAME_TREE : REQUEST_MOD_TREE);
+                    startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), REQUEST_GAME_TREE);
                 } else {
                     Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
                     intent.addCategory(Intent.CATEGORY_OPENABLE);
@@ -581,7 +562,7 @@ public final class LauncherActivity extends Activity {
         long bytes;
     }
 
-    private void startInstall(Uri source, boolean isZip, boolean gameFiles) {
+    private void startInstall(Uri source, boolean isZip) {
         InstallProgress progress = new InstallProgress();
         progress.label = text(getString(R.string.install_scanning), 15, false);
         progress.label.setPadding(dp(20), dp(16), dp(20), dp(16));
@@ -592,18 +573,13 @@ public final class LauncherActivity extends Activity {
             .setNegativeButton(R.string.install_cancel, (dialog, which) -> progress.cancelled = true)
             .show();
 
-        String fallbackModName = safeName(stripZipExtension(queryDisplayName(source)));
         new Thread(() -> {
             try {
                 List<SourceEntry> entries = isZip ? listZipEntries(source) : listTreeEntries(source);
-                Map<SourceEntry, File> plan = gameFiles
-                    ? planGameInstall(entries)
-                    : planModInstall(entries, fallbackModName);
-                int modCount = gameFiles ? 0 : countPlannedMods(plan);
+                Map<SourceEntry, File> plan = planGameInstall(entries);
 
                 if (plan.isEmpty()) {
-                    finishInstall(progress, getString(gameFiles
-                        ? R.string.error_install_no_game : R.string.error_install_no_mod), false);
+                    finishInstall(progress, getString(R.string.error_install_no_game), false);
                     return;
                 }
 
@@ -616,9 +592,7 @@ public final class LauncherActivity extends Activity {
                 if (progress.cancelled) {
                     finishInstall(progress, getString(R.string.install_cancelled), false);
                 } else {
-                    finishInstall(progress, gameFiles
-                        ? getString(R.string.install_done_game)
-                        : getString(R.string.install_done_mod, modCount), true);
+                    finishInstall(progress, getString(R.string.install_done_game), true);
                 }
             } catch (Exception exception) {
                 String reason = exception.getMessage() != null
@@ -724,53 +698,6 @@ public final class LauncherActivity extends Activity {
         return plan;
     }
 
-    /** Each folder holding a mod.ini becomes <game root>/mods/<folder name>. */
-    private Map<SourceEntry, File> planModInstall(List<SourceEntry> entries, String fallbackName) {
-        List<String> roots = new ArrayList<>();
-        for (SourceEntry entry : entries) {
-            if (entry.path.equals("mod.ini") || entry.path.endsWith("/mod.ini")) {
-                roots.add(entry.path.substring(0, entry.path.length() - "mod.ini".length()));
-            }
-        }
-        // Outermost roots only: a nested mod.ini belongs to its parent mod's content.
-        List<String> outer = new ArrayList<>();
-        for (String root : roots) {
-            boolean nested = false;
-            for (String other : roots) {
-                if (!other.equals(root) && root.startsWith(other)) { nested = true; break; }
-            }
-            if (!nested) outer.add(root);
-        }
-
-        Map<SourceEntry, File> plan = new LinkedHashMap<>();
-        File modsDir = new File(AppStorage.activeGameRoot(this), "mods");
-        for (SourceEntry entry : entries) {
-            for (String root : outer) {
-                if (!entry.path.startsWith(root)) continue;
-                String folderName = root.isEmpty()
-                    ? fallbackName
-                    : root.substring(root.lastIndexOf('/', root.length() - 2) + 1, root.length() - 1);
-                plan.put(entry, new File(new File(modsDir, safeName(folderName)),
-                    entry.path.substring(root.length())));
-                break;
-            }
-        }
-        return plan;
-    }
-
-    private static int countPlannedMods(Map<SourceEntry, File> plan) {
-        java.util.HashSet<String> modDirs = new java.util.HashSet<>();
-        for (File destination : plan.values()) {
-            File parent = destination;
-            while (parent.getParentFile() != null
-                    && !"mods".equals(parent.getParentFile().getName())) {
-                parent = parent.getParentFile();
-            }
-            modDirs.add(parent.getName());
-        }
-        return modDirs.size();
-    }
-
     private InputStream openSourceStream(Uri uri) throws IOException {
         InputStream input = getContentResolver().openInputStream(uri);
         if (input == null) throw new IOException("Cannot open the selected source");
@@ -829,11 +756,6 @@ public final class LauncherActivity extends Activity {
         }
         progress.files++;
         if (progress.files % 25 == 0) publishProgress(progress);
-    }
-
-    private static String stripZipExtension(String name) {
-        return name.toLowerCase(Locale.ROOT).endsWith(".zip")
-            ? name.substring(0, name.length() - 4) : name;
     }
 
     private void openFiles(String rootId) {

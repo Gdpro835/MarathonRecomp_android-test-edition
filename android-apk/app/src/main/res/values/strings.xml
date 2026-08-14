@@ -3,20 +3,7 @@
     <string name="documents_game_title">Marathon Recompiled game files</string>
     <string name="documents_game_summary">Active game, mods, configuration and saves</string>
     <string name="documents_transfer_title">Marathon Recompiled transfers</string>
-    <string name="documents_transfer_summary">Mods, driver imports, logs and diagnostic captures</string>
-    <string name="mod_manager_launcher_name">Marathon Mods</string>
-    <string name="mod_manager_title">Marathon Mods</string>
-    <string name="mod_manager_hint">Copy each mod folder into the mods directory, refresh this list, enable mods and arrange their priority. Save writes the standard CPKREDIR database; restart the game to apply changes.</string>
-    <string name="mod_manager_open_files">Open Files</string>
-    <string name="mod_manager_refresh">Refresh</string>
-    <string name="mod_manager_save">Save mod list</string>
-    <string name="mod_manager_empty">No compatible mod.ini files found. Use Open mod folder, create mods/, then copy HMM or UMM mods into it.</string>
-    <string name="mod_manager_found">Found %1$d compatible mods.</string>
-    <string name="mod_manager_saved">Saved %1$d enabled mods in priority order.</string>
-    <string name="mod_manager_restart">Mod changes will apply after the game is restarted.</string>
-    <string name="mod_manager_error_directory">Cannot create configuration directory: %1$s</string>
-    <string name="mod_manager_error_save">Cannot save the mod database: %1$s</string>
-    <string name="mod_manager_error_files">Android Files could not be opened.</string>
+    <string name="documents_transfer_summary">Driver imports, logs and diagnostic captures</string>
 
     <string name="launcher_title">Marathon Recompiled</string>
     <string name="launcher_subtitle">Play Sonic the Hedgehog (2006) on Android. Check the installation and configure the game before launch.</string>
@@ -30,9 +17,6 @@
     <string name="launcher_driver_folder">Driver folder</string>
     <string name="launcher_controls">Controls</string>
     <string name="launcher_edit_layout">Arrange touch controls</string>
-    <string name="launcher_mods">Mods</string>
-    <string name="launcher_mods_summary">Enable compatible HMM/UMM mods and set their priority.</string>
-    <string name="launcher_manage_mods">Manage mods</string>
     <string name="launcher_debug">Debug options</string>
     <string name="launcher_skip_intro">Skip intro logos</string>
     <string name="launcher_validation">Vulkan synchronization validation (slow)</string>
@@ -61,7 +45,6 @@
     <string name="error_open_files">Android Files could not open the application folder.</string>
     <string name="driver_imported">%1$s was copied. It will be validated and installed at game launch.</string>
     <string name="launcher_install_game">Install game files (.zip / folder)</string>
-    <string name="launcher_install_mod">Install a mod (.zip / folder)</string>
     <string name="install_source_zip">From a ZIP archive</string>
     <string name="install_source_folder">From a folder</string>
     <string name="install_source_iso_packages">From ISO / DLC packages</string>
@@ -72,11 +55,9 @@
     <string name="install_done_game">Game files installed.</string>
     <string name="install_done_iso_staged">Installer packages staged. Tap Launch game to verify and install the base game and optional DLC.</string>
     <string name="launcher_install_staged">Installer packages are ready. Launch the game to verify and install them.</string>
-    <string name="install_done_mod">Installed mods: %1$d. Enable them in the mod manager.</string>
     <string name="install_cancelled">Installation cancelled. Partially copied files were left in place.</string>
     <string name="error_install_failed">Installation failed: %1$s</string>
     <string name="error_install_no_game">The selected source does not contain game/default.xex. Choose the dump that holds the game and optional dlc folders.</string>
-    <string name="error_install_no_mod">The selected source does not contain a mod.ini, so no mod could be found in it.</string>
 
     <string-array name="driver_labels">
         <item>Auto (recommended)</item><item>System</item><item>Bundled Turnip</item><item>Imported</item>
@@ -90,8 +71,6 @@
     <string name="launcher_open_saves">Open saves folder</string>
     <string name="launcher_controls_moved">On-screen controls, camera and stick moved to the in-game options menu (Input). Adjust them there while playing.</string>
     <string name="launcher_force_bc">Force native BC textures (disable ETC2 transcode; only for GPUs that support BC)</string>
-    <string name="mod_manager_codes">Codes</string>
-    <string name="mod_manager_codes_hint">Built-in patches applied at boot. Saved with the mod list; restart the game to apply.</string>
     <string name="launcher_updates">Application updates</string>
     <string name="update_current_version">Installed version: %1$s</string>
     <string name="update_check">Check for updates</string>
