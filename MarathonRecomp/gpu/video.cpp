@@ -1273,6 +1273,22 @@ static void ProcSetRenderState(const RenderCommand& cmd)
     }
     case D3DRS_STENCILENABLE:
     {
+        // Diagnostic (logging only): the Android build maps depth formats to
+        // D32_FLOAT (no stencil aspect) to avoid Adreno 6xx Turnip D32S8
+        // corruption, so a game that enables the stencil test would have that
+        // test silently dropped. Log the first few enables to see if Sonic
+        // 2006 actually uses stencil.
+#if defined(__ANDROID__)
+        if (value != 0)
+        {
+            static uint32_t s_loggedStencilEnable;
+            if (s_loggedStencilEnable < 3)
+            {
+                ++s_loggedStencilEnable;
+                LOGF("SetRenderState diag: D3DRS_STENCILENABLE=1 (Android depth format has no stencil aspect).");
+            }
+        }
+#endif
         SetDirtyValue(g_dirtyStates.pipelineState, g_pipelineState.stencilEnable, value != 0);
         g_dirtyStates.renderTargetAndDepthStencil |= g_dirtyStates.pipelineState;
         break;
@@ -2433,7 +2449,14 @@ bool Video::CreateHostDevice(const char *sdlVideoDriver, bool graphicsApiRetry)
     desc.depthFunction = RenderComparisonFunction::ALWAYS;
     desc.depthEnabled = true;
     desc.depthWriteEnabled = true;
+    // Must match the depth format of the surfaces the pipeline renders into:
+    // Android uses D32_FLOAT (no stencil) to avoid Adreno 6xx Turnip D32S8
+    // corruption, so the depth-copy pipeline is compiled for that format there.
+#if defined(__ANDROID__)
+    desc.depthTargetFormat = RenderFormat::D32_FLOAT;
+#else
     desc.depthTargetFormat = RenderFormat::D32_FLOAT_S8_UINT;
+#endif
     g_copyDepthPipeline = g_device->createGraphicsPipeline(desc);
 
     g_resolveMsaaColorShaders[0] = CREATE_SHADER(resolve_msaa_color_2x);
@@ -2463,7 +2486,11 @@ bool Video::CreateHostDevice(const char *sdlVideoDriver, bool graphicsApiRetry)
         desc.depthFunction = RenderComparisonFunction::ALWAYS;
         desc.depthEnabled = true;
         desc.depthWriteEnabled = true;
+#if defined(__ANDROID__)
+        desc.depthTargetFormat = RenderFormat::D32_FLOAT;
+#else
         desc.depthTargetFormat = RenderFormat::D32_FLOAT_S8_UINT;
+#endif
         g_resolveMsaaDepthPipelines[i] = g_device->createGraphicsPipeline(desc);
     }
 
@@ -3680,7 +3707,20 @@ static RenderFormat ConvertFormat(uint32_t format)
         return RenderFormat::R32_FLOAT;
     case D3DFMT_D24FS8:
     case D3DFMT_D24S8:
+#if defined(__ANDROID__)
+        // Adreno 6xx Turnip has known problems with D32_FLOAT_S8_UINT
+        // (D32S8): Mesa 26.2.0 had to add "tu/a6xx: Work around D32S8
+        // EARLY_Z_LATE_Z hang", and the bundled driver is the 26.1 build.
+        // UnleashedRecomp - which renders correctly on this same hardware -
+        // maps these formats to D32_FLOAT (no stencil) instead. Match that
+        // on Android: the depth test works and the scene renders, while
+        // stencil-dependent effects degrade gracefully instead of the whole
+        // 3D world failing the depth test (black screen with only UI
+        // visible). Desktop keeps the stencil format.
+        return RenderFormat::D32_FLOAT;
+#else
         return RenderFormat::D32_FLOAT_S8_UINT;
+#endif
     case D3DFMT_G16R16F:
     case D3DFMT_G16R16F_2:
         return RenderFormat::R16G16_FLOAT;
@@ -4464,7 +4504,11 @@ static void ProcClear(const RenderCommand& cmd)
             SetFramebuffer(nullptr, g_depthStencil, true);
         }
 
-        commandList->clearDepthStencil(clearDepth, clearStencil, args.z, args.stencil);
+        // Only clear stencil if the depth format actually has a stencil aspect:
+        // the Android depth mapping is D32_FLOAT (no stencil), and clearing a
+        // non-existent stencil aspect is invalid Vulkan usage.
+        const bool depthHasStencil = RenderFormatIsStencil(g_depthStencil->format);
+        commandList->clearDepthStencil(clearDepth, clearStencil && depthHasStencil, args.z, args.stencil);
     }
 }
 
