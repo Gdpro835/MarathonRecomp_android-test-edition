@@ -336,6 +336,31 @@ PPC_FUNC(sub_828C8F60)
 
     g_sceneModifier = FindCsdModifier(ctx.r3.u32);
 
+    // Diagnostic (logging only): on ultrawide devices the CSD scenes of the
+    // menu/HUD go through aspect-ratio modifier patches, and corner-extract
+    // scenes are rendered TWICE (once to measure, once for real). Log the
+    // first few occurrences so a test log reveals whether these patches are
+    // involved in the corrupted menu rendering.
+    if (g_sceneModifier.has_value())
+    {
+        static uint32_t s_loggedCsdModifiers;
+        if (s_loggedCsdModifiers < 6)
+        {
+            ++s_loggedCsdModifiers;
+            LOGF("CSD scene diag: modifier flags=0x{:X} aspectRatio={:.3f}",
+                g_sceneModifier->Flags, g_aspectRatio);
+        }
+        if ((g_sceneModifier->Flags & CSD_CORNER_EXTRACT) != 0 && g_aspectRatio > WIDE_ASPECT_RATIO)
+        {
+            static uint32_t s_loggedCornerExtract;
+            if (s_loggedCornerExtract < 3)
+            {
+                ++s_loggedCornerExtract;
+                LOG("CSD scene diag: corner-extract active (scene renders twice for ultrawide).");
+            }
+        }
+    }
+
     if (g_sceneModifier.has_value())
     {
         if ((g_sceneModifier->Flags & CSD_MODIFIER_ULTRAWIDE_ONLY) != 0 && g_aspectRatio <= WIDE_ASPECT_RATIO)

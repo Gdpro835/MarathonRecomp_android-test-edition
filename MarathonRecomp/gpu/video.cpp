@@ -418,6 +418,14 @@ static constexpr uint32_t CONDITIONAL_SURVEY_MAX = 64;
 static std::unique_ptr<RenderBuffer> g_conditionalSurveyBuffer;
 static std::unique_ptr<RenderDescriptorSet> g_conditionalSurveyDescriptorSet;
 
+// Diagnostic override (Android): when a driver_import/disable_conditional_survey.txt
+// marker exists, Sonic 2006's occlusion-survey path is forced off so every draw
+// renders unconditionally. The survey relies on atomic counters + conditional
+// rendering which is a known trouble spot on Adreno 6xx Turnip; this lets a
+// tester verify whether it is the cause of missing/corrupted scene content
+// without rebuilding the APK.
+static bool g_forceDisableConditionalSurvey = false;
+
 enum
 {
     TEXTURE_DESCRIPTOR_NULL_TEXTURE_2D,
@@ -2150,6 +2158,20 @@ bool Video::CreateHostDevice(const char *sdlVideoDriver, bool graphicsApiRetry)
         {
             g_capabilities.textureCompressionETC2 = false;
             LOG("Mali compatibility path: using CPU RGBA texture fallback.");
+        }
+    }
+
+    // Diagnostic override (Android): disable Sonic 2006's occlusion survey
+    // (conditional rendering) to check whether it is the source of
+    // missing/corrupted scene content on Adreno 6xx Turnip. Marker files are
+    // read independently of the BC overrides above.
+    {
+        std::error_code disableSurveyEc;
+        if (std::filesystem::exists(os::android::GetExternalFilesDir() / "driver_import" / "disable_conditional_survey.txt", disableSurveyEc) ||
+            std::filesystem::exists(os::android::GetInternalFilesDir() / "disable_conditional_survey.txt", disableSurveyEc))
+        {
+            g_forceDisableConditionalSurvey = true;
+            LOG_WARNING("disable_conditional_survey.txt present: occlusion survey disabled (every draw renders unconditionally).");
         }
     }
 #endif
@@ -6105,6 +6127,15 @@ static void EndConditionalSurvey(GuestDevice* device)
 
 static void ProcSetConditionalSurvey(const RenderCommand& cmd)
 {
+    if (g_forceDisableConditionalSurvey)
+    {
+        // Diagnostic override: keep the survey permanently disabled so every
+        // draw renders unconditionally.
+        SetDirtyValue(g_dirtyStates.pipelineState, g_pipelineState.enableConditionalSurvey, false);
+        SetDirtyValue(g_dirtyStates.sharedConstants, g_sharedConstants.conditionalSurveyIndex, cmd.setConditionalSurvey.index);
+        return;
+    }
+
     if (cmd.setConditionalSurvey.enabled)
     {
         // Clear previous survey result first.
@@ -6147,7 +6178,12 @@ static void EndConditionalRendering(GuestDevice* device)
 static void ProcSetConditionalRendering(const RenderCommand& cmd)
 {
     uint32_t specConstants = g_pipelineState.specConstants;
-    if (cmd.setConditionalRendering.enabled)
+    if (g_forceDisableConditionalSurvey)
+    {
+        // Diagnostic override: never conditionally discard pixels.
+        specConstants &= ~SPEC_CONSTANT_CONDITIONAL_RENDERING;
+    }
+    else if (cmd.setConditionalRendering.enabled)
         specConstants |= SPEC_CONSTANT_CONDITIONAL_RENDERING;
     else
         specConstants &= ~SPEC_CONSTANT_CONDITIONAL_RENDERING;
