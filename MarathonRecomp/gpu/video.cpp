@@ -2260,6 +2260,19 @@ bool Video::CreateHostDevice(const char *sdlVideoDriver, bool graphicsApiRetry)
             LOG_WARNING("BC texture formats are unsupported by this device. Textures will be decompressed on the CPU at load time, increasing memory usage.");
     }
 
+    // The bindless texture heap is the one thing every guest draw depends on and nothing
+    // else exercises: the ImGui overlay uses a separate two-set layout, which is why it
+    // stays correct while guest content does not. A device reporting 0 here means the
+    // limits were never filled in - Marathon's plume reads them from the core 1.2
+    // properties struct where UnleashedRecomp's reads the descriptor-indexing extension
+    // struct - and 0 silently skips the clamp below, leaving the heap at its full size.
+    LOGF("Bindless limits: maxSampledImageDescriptors={} maxSamplerDescriptors={} "
+         "descriptorIndexing={} scalarBlockLayout={} bufferDeviceAddress={}; requested {} textures, {} samplers.",
+        g_capabilities.maxSampledImageDescriptors, g_capabilities.maxSamplerDescriptors,
+        g_capabilities.descriptorIndexing, g_capabilities.scalarBlockLayout,
+        g_capabilities.bufferDeviceAddress,
+        uint32_t(TEXTURE_DESCRIPTOR_SIZE), uint32_t(SAMPLER_DESCRIPTOR_SIZE));
+
     if (g_capabilities.maxSampledImageDescriptors != 0)
         g_textureDescriptorSize = uint32_t(std::min<size_t>(TEXTURE_DESCRIPTOR_SIZE, g_capabilities.maxSampledImageDescriptors));
 
@@ -2329,23 +2342,16 @@ bool Video::CreateHostDevice(const char *sdlVideoDriver, bool graphicsApiRetry)
         // vertex data. UnleashedRecomp binds sets 0 to 3 only and has never needed
         // the survey, which is why it renders correctly on the same phone and the
         // same driver build.
-        if (deviceName.find("adreno") != std::string::npos ||
-            deviceName.find("turnip") != std::string::npos)
-        {
-            if (AndroidMarkerFileExists("force_conditional_survey.txt"))
-            {
-                LOG_WARNING("force_conditional_survey.txt present: keeping the occlusion survey on "
-                            "descriptor set 4, which this driver does not expose. Expect corrupted "
-                            "colours and geometry; delete the file to disable the survey again.");
-            }
-            else
-            {
-                g_conditionalSurveyDescriptorSetSupported = false;
-                g_forceDisableConditionalSurvey = true;
-                LOG("Occlusion survey disabled: this driver exposes four descriptor sets and the "
-                    "survey needs a fifth. Every draw renders unconditionally.");
-            }
-        }
+        // Descriptor set 4 holds the occlusion survey's counter buffer, a fifth set on top
+        // of the three texture sets and the sampler set. Adreno has five bindless sets in
+        // hardware and Turnip keeps one for itself, so four is all an application may bind
+        // and index 4 is past the end. Dropping it was tried on an Adreno 610 and changed
+        // nothing, so it is not the cause of the corruption there and is not worth losing
+        // occlusion culling for by default. It is still out of spec, so it stays tied to
+        // the survey's own switch: disable_conditional_survey.txt now also takes the set
+        // out of the pipeline layout rather than leaving a set bound that nothing reads.
+        if (g_forceDisableConditionalSurvey)
+            g_conditionalSurveyDescriptorSetSupported = false;
     }
 #endif
 
