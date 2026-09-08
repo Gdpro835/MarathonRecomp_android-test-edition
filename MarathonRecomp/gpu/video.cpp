@@ -42,6 +42,7 @@
 #include <os/logger.h>
 #include <os/process.h>
 #if defined(__ANDROID__)
+#include <cstdlib>
 #include <os/android/storage_android.h>
 #include <os/android/vulkan_driver_android.h>
 #endif
@@ -2114,6 +2115,36 @@ bool Video::CreateHostDevice(const char *sdlVideoDriver, bool graphicsApiRetry)
     g_capabilities = g_device->getCapabilities();
 
 #if defined(__ANDROID__)
+    // Record which GPU/driver combination this launch actually ended up on. Without it a
+    // tester's log.txt cannot tell an Adreno 610 running the bundled Turnip apart from the
+    // same phone silently falling back to the stock Qualcomm driver - which invalidates
+    // every other conclusion drawn from the log - and it verifies the pre-load kgsl model
+    // detection that chose the TU_DEBUG options before any driver existed.
+    {
+        const RenderDeviceDescription &description = g_device->getDescription();
+        const char *tuDebug = std::getenv("TU_DEBUG");
+
+        LOGF("Vulkan device: \"{}\" (driver version {}, reported dedicated video memory {} MiB).",
+            description.name, description.driverVersion, description.dedicatedVideoMemory / (1024ull * 1024ull));
+        LOGF("TU_DEBUG in effect: \"{}\".",
+            tuDebug != nullptr ? tuDebug : "(unset: stock driver, or GMEM default)");
+
+        const int detectedModel = AndroidGetDetectedAdrenoModel();
+        if (detectedModel != 0)
+        {
+            LOGF("Pre-load GPU detection: Adreno {}.", detectedModel);
+        }
+        else
+        {
+            LOG_WARNING("Pre-load GPU detection failed (kgsl sysfs unreadable): the low-end Adreno "
+                        "compatibility preset could only be chosen from SoC properties. On an Adreno "
+                        "610-class device with corrupted menus, put \"sysmem,noubwc\" into "
+                        "driver_import/tu_debug.txt to apply it by hand.");
+        }
+    }
+#endif
+
+#if defined(__ANDROID__)
     // Testing hook: a force_no_bc.txt in the external driver_import folder (reachable over
     // MTP/file managers) or in the internal files dir (reachable via adb run-as, since
     // shell-created files under Android/data are not readable by the app on some devices)
@@ -2172,6 +2203,12 @@ bool Video::CreateHostDevice(const char *sdlVideoDriver, bool graphicsApiRetry)
         {
             g_forceDisableConditionalSurvey = true;
             LOG_WARNING("disable_conditional_survey.txt present: occlusion survey disabled (every draw renders unconditionally).");
+        }
+        else
+        {
+            // Logged in both states so a screenshot sent by a tester can always be tied to
+            // the mode that produced it.
+            LOG("Occlusion survey: enabled (create driver_import/disable_conditional_survey.txt to render every draw unconditionally).");
         }
     }
 #endif

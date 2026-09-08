@@ -136,23 +136,31 @@ static EAndroidGpuFamily DetectGpuFamily(std::string &description)
     return EAndroidGpuFamily::Other;
 }
 
-// Identifies the low-end Adreno 6xx GPU generation (Adreno 610/612/615/616/
-// 618/619, used by Snapdragon 4xx/6xx-class SoCs such as SD 460/480/662/680).
-// The HAL properties used by DetectGpuFamily() only ever say "adreno" - they
-// never contain the model number - so this class must be identified from the
-// SoC properties instead (the board platform or the SoC part number). Turnip
-// rendering on this generation is known to corrupt through the GMEM path with
-// some engines, and the port's own guidance for it is to use Sysmem.
+// Fallback identification of the low-end Adreno 6xx GPU generation (Adreno 610/612/615/
+// 616/618/619, used by Snapdragon 4xx/6xx-class SoCs such as SD 460/480/662/665/680) from
+// the SoC properties. Preferred path is GetAdrenoModel() further down, which reads the
+// exact GPU model out of kgsl sysfs; this table is only consulted when those nodes are
+// unreadable. The HAL properties used by DetectGpuFamily() are no help here - they only
+// ever say "adreno" and never carry the model number. Turnip rendering on this generation
+// is known to corrupt through the GMEM path with some engines, and the port's own guidance
+// for it is to use Sysmem.
+//
+// The list is necessarily incomplete: an unlisted phone simply misses the workaround, which
+// is why the kgsl path above it exists.
 static bool IsLowEndAdreno6xxSoC()
 {
     char buffer[PROP_VALUE_MAX]{};
 
     // ro.board.platform for the Adreno 610/612/615/616/618/619 generation:
-    //   bengal -> SM6115 (SD 662), SM4350 (SD 480), SM4250 (SD 460)
-    //   holi   -> SM6225 (SD 680)
-    //   khaje  -> SM6225-AD variants
+    //   bengal    -> SM6115 (SD 662), SM4350 (SD 480), SM4250 (SD 460)
+    //   holi      -> SM6225 (SD 680)
+    //   khaje     -> SM6225-AD variants
+    //   trinket   -> SM6125 (SD 665), SDM665 - Adreno 610, missed by the list above
+    //   sm6150    -> SM6150 (SD 675), SM7125/SM7150 (SD 720G/730/732G) - Adreno 612/618
+    //   atoll     -> SM6350 (SD 690), SM7225 - Adreno 619
+    //   sdmmagpie -> SDM730/SDM730G - Adreno 618
     __system_property_get("ro.board.platform", buffer);
-    const char *knownPlatforms[] = { "bengal", "holi", "khaje" };
+    const char *knownPlatforms[] = { "bengal", "holi", "khaje", "trinket", "sm6150", "atoll", "sdmmagpie" };
     for (const char *platform : knownPlatforms)
     {
         if (strcmp(buffer, platform) == 0)
@@ -163,7 +171,11 @@ static bool IsLowEndAdreno6xxSoC()
     // the known ones (custom ROMs sometimes change ro.board.platform).
     buffer[0] = '\0';
     __system_property_get("ro.soc.model", buffer);
-    const char *knownSocs[] = { "SM6115", "SM6225", "SM4350", "SM4250", "SM4375" };
+    const char *knownSocs[] =
+    {
+        "SM6115", "SM6225", "SM4350", "SM4250", "SM4375",
+        "SM6125", "SDM665", "SM6150", "SM7125", "SM7150", "SM6350", "SM7225", "SDM730", "SDM730G",
+    };
     for (const char *soc : knownSocs)
     {
         if (strcmp(buffer, soc) == 0)
@@ -781,6 +793,21 @@ static void ProcessDriverImportDir(const std::filesystem::path &turnipDir)
         "Delete tu_debug.txt to return control to the Render Mode option.\n"
         "The app already ships with a working driver; this is for experiments.\n"
         "\n"
+        "ADRENO 610-CLASS DEVICES (Adreno 605-619, e.g. Snapdragon 460/480/662/\n"
+        "665/680): the game detects this GPU generation and applies a\n"
+        "compatibility preset automatically, because the guest render targets\n"
+        "come out corrupted otherwise (turquoise scene background, menu text\n"
+        "drawn several times over itself, while the overlay stays correct).\n"
+        "If your device still shows corruption, create a610_preset.txt in THIS\n"
+        "folder containing a single digit and relaunch:\n"
+        "  0 = sysmem\n"
+        "  1 = sysmem,noubwc          (default)\n"
+        "  2 = sysmem,noubwc,nolrz\n"
+        "  3 = sysmem,noubwc,nolrz,nobin\n"
+        "  4 = stock GMEM behaviour   (for comparison shots)\n"
+        "Try them in order and note which one looks correct - that answer is\n"
+        "what a fix needs. log.txt records the preset used for every launch.\n"
+        "\n"
         "DIAGNOSTICS: the app writes a log to log.txt in the PARENT folder (one\n"
         "level up from this driver_import/ folder). If the game freezes, close it\n"
         "and send that log.txt - it records what each thread was doing when frames\n"
@@ -965,6 +992,187 @@ static bool ReadTrimmedTextFile(const std::filesystem::path &path, char *buffer,
 
     buffer[bytesRead] = '\0';
     return bytesRead > 0;
+}
+
+// ---------------------------------------------------------------------------
+// Adreno model detection (runs before any Vulkan driver is loaded)
+// ---------------------------------------------------------------------------
+// TU_DEBUG has to be chosen BEFORE the driver is dlopen'd, so the Vulkan device name
+// ("Turnip Adreno (TM) 610") cannot be used here - it only exists once a driver is up.
+// The kgsl kernel driver publishes the GPU model through sysfs and both nodes are
+// world-readable on stock devices, which identifies the exact GPU instead of inferring
+// it from the SoC. IsLowEndAdreno6xxSoC() stays as the last resort for kernels/ROMs
+// that don't expose these nodes.
+static constexpr const char *KGSL_GPU_MODEL_PATH = "/sys/class/kgsl/kgsl-3d0/gpu_model";
+static constexpr const char *KGSL_GPU_CHIPID_PATH = "/sys/class/kgsl/kgsl-3d0/gpu_chipid";
+
+// "Adreno610v2", "Adreno 610", "Adreno (TM) 610" -> 610. Returns 0 when the text does not
+// carry a plausible model number, so the caller can fall through to the next source.
+static int ParseAdrenoModelFromName(const char *text)
+{
+    std::string lowered(text);
+    for (char &c : lowered)
+        c = char(tolower(uint8_t(c)));
+
+    size_t pos = lowered.find("adreno");
+    if (pos == std::string::npos)
+        return 0;
+
+    pos += 6;
+
+    // Only step over the usual decorations between the name and the number, so an
+    // unrelated trailing number elsewhere in the string is never picked up.
+    while (pos < lowered.size() && (lowered[pos] < '0' || lowered[pos] > '9'))
+    {
+        const char c = lowered[pos];
+        if (c != ' ' && c != '-' && c != '_' && c != '.' && c != '(' && c != ')' && c != 't' && c != 'm')
+            return 0;
+
+        ++pos;
+    }
+
+    int model = 0;
+    int digits = 0;
+    while (pos < lowered.size() && lowered[pos] >= '0' && lowered[pos] <= '9' && digits < 4)
+    {
+        model = model * 10 + (lowered[pos] - '0');
+        ++pos;
+        ++digits;
+    }
+
+    return (digits >= 3) ? model : 0;
+}
+
+// kgsl reports the chip id as 0xCCMMmmPP (core, major, minor, patch): 0x06010000 is an
+// Adreno 610, 0x06010900 an Adreno 619, 0x07030000 an Adreno 730.
+static int ParseAdrenoModelFromChipId(const char *text)
+{
+    errno = 0;
+    char *end = nullptr;
+    const unsigned long long chipId = strtoull(text, &end, 0);
+    if (errno != 0 || end == text || chipId == 0)
+        return 0;
+
+    const unsigned core = unsigned((chipId >> 24) & 0xFF);
+    const unsigned major = unsigned((chipId >> 16) & 0xFF);
+    const unsigned minor = unsigned((chipId >> 8) & 0xFF);
+    if (core < 3 || core > 9 || major > 9 || minor > 9)
+        return 0;
+
+    return int(core * 100 + major * 10 + minor);
+}
+
+static int g_adrenoModel = -1; // -1 = not resolved yet, 0 = unknown.
+static std::string g_adrenoModelSource;
+
+static int GetAdrenoModel()
+{
+    if (g_adrenoModel >= 0)
+        return g_adrenoModel;
+
+    char buffer[128]{};
+    if (ReadTrimmedTextFile(KGSL_GPU_MODEL_PATH, buffer, sizeof(buffer)))
+    {
+        const int model = ParseAdrenoModelFromName(buffer);
+        if (model != 0)
+        {
+            g_adrenoModel = model;
+            g_adrenoModelSource = fmt::format("{} (\"{}\")", KGSL_GPU_MODEL_PATH, buffer);
+            return g_adrenoModel;
+        }
+    }
+
+    buffer[0] = '\0';
+    if (ReadTrimmedTextFile(KGSL_GPU_CHIPID_PATH, buffer, sizeof(buffer)))
+    {
+        const int model = ParseAdrenoModelFromChipId(buffer);
+        if (model != 0)
+        {
+            g_adrenoModel = model;
+            g_adrenoModelSource = fmt::format("{} (\"{}\")", KGSL_GPU_CHIPID_PATH, buffer);
+            return g_adrenoModel;
+        }
+    }
+
+    g_adrenoModel = 0;
+    g_adrenoModelSource = "unavailable (kgsl sysfs not readable)";
+    return g_adrenoModel;
+}
+
+// Adreno 6xx gen1 low-end parts: 605/608/610/612/613/615/616/618/619. Adreno 620 and up
+// are a different (gen2+) configuration and are deliberately excluded.
+static bool IsLowEndAdreno6xxGpu(std::string &reason)
+{
+    const int model = GetAdrenoModel();
+    if (model != 0)
+    {
+        const bool lowEnd = model >= 600 && model <= 619;
+        reason = fmt::format("Adreno {} detected from {}", model, g_adrenoModelSource);
+        return lowEnd;
+    }
+
+    if (IsLowEndAdreno6xxSoC())
+    {
+        reason = "SoC property table matched (GPU model unavailable)";
+        return true;
+    }
+
+    reason = fmt::format("no low-end Adreno 6xx detected ({})", g_adrenoModelSource);
+    return false;
+}
+
+// Low-end a6xx compatibility presets.
+//
+// Symptom this addresses on Adreno 610-class hardware: the guest render targets come out
+// wrong (turquoise scene background, menu text drawn several times over itself) while the
+// host ImGui overlay - which is rendered straight into the swapchain and never touches a
+// guest surface - stays correct. Content that is structurally intact but repeated/shifted
+// with a colour cast is what a mismatched tile/compression layout looks like rather than a
+// shader or synchronisation bug, so the default pairs the documented sysmem workaround for
+// this GPU generation with UBWC disabled.
+//
+// The preset is selectable at runtime through driver_import/a610_preset.txt so a tester can
+// walk the whole ladder in one session without a rebuild; driver_import/tu_debug.txt still
+// overrides everything.
+static constexpr const char *A610_PRESETS[] =
+{
+    "sysmem",                    // 0: documented baseline, UBWC left enabled.
+    "sysmem,noubwc",             // 1: default - adds UBWC off (tile/compression layout suspect).
+    "sysmem,noubwc,nolrz",       // 2: + low-resolution Z off.
+    "sysmem,noubwc,nolrz,nobin", // 3: + binning off. Slowest, most conservative.
+    "none",                      // 4: control - stock GMEM behaviour, for comparison shots.
+};
+static constexpr int A610_PRESET_COUNT = int(sizeof(A610_PRESETS) / sizeof(A610_PRESETS[0]));
+static constexpr int A610_DEFAULT_PRESET = 1;
+
+static const char *GetLowEndAdrenoTuDebugPreset()
+{
+    int preset = A610_DEFAULT_PRESET;
+
+    char buffer[64]{};
+    const std::filesystem::path &externalDir = os::android::GetExternalFilesDir();
+    if (!externalDir.empty() &&
+        ReadTrimmedTextFile(externalDir / "driver_import" / "a610_preset.txt", buffer, sizeof(buffer)))
+    {
+        const int requested = atoi(buffer);
+        if (requested >= 0 && requested < A610_PRESET_COUNT)
+        {
+            preset = requested;
+            LOGF("Low-end Adreno preset overridden by a610_preset.txt: {}.", preset);
+        }
+        else
+        {
+            LOGF_WARNING("Ignoring invalid a610_preset.txt value \"{}\" (expected 0..{}); using preset {}.",
+                buffer, A610_PRESET_COUNT - 1, preset);
+        }
+    }
+
+    LOGF("Low-end Adreno compatibility preset {} of 0..{}: TU_DEBUG=\"{}\". "
+         "Write a different digit into driver_import/a610_preset.txt to try another one "
+         "(0=sysmem, 1=+noubwc, 2=+nolrz, 3=+nobin, 4=stock GMEM).",
+        preset, A610_PRESET_COUNT - 1, A610_PRESETS[preset]);
+
+    return A610_PRESETS[preset];
 }
 
 // Select a deterministic TU_DEBUG default from the restart-required Render Mode option.
@@ -1272,6 +1480,7 @@ void *AndroidGetCustomVulkanLoader()
 
     EAndroidRenderMode effectiveRenderMode = g_runtimeRenderMode;
     const char *driverTuDebugPreset = nullptr;
+    bool allowTuDebugOverride = true;
     if (effectiveRenderMode == EAndroidRenderMode::Auto &&
         g_runtimeVulkanDriver == EAndroidVulkanDriver::Vauzi710)
     {
@@ -1279,26 +1488,35 @@ void *AndroidGetCustomVulkanLoader()
         LOG("Adreno 710 Vauzi driver: Auto render mode selects Sysmem as recommended by the driver author.");
     }
 
-    // Low-end Adreno 6xx (SD 460/480/662/680-class) Turnip renders some engines
-    // corruptly through the GMEM path (rainbow/garbage surfaces); the port's
-    // documented workaround for this GPU generation is Sysmem (TU_DEBUG=sysmem).
-    // Apply it automatically in Auto mode, exactly like the Vauzi710 precedent
-    // above. Explicit GMEM/Sysmem selection and driver_import/tu_debug.txt still
-    // take precedence (ApplyRenderMode handles the external override).
-    if (effectiveRenderMode == EAndroidRenderMode::Auto && IsLowEndAdreno6xxSoC())
+    // Low-end Adreno 6xx (Adreno 610-class, SD 460/480/662/665/680-class) Turnip renders
+    // the guest render targets corruptly through the GMEM path; the port's documented
+    // workaround for this GPU generation is Sysmem, and the preset below extends it with
+    // the tile/compression options that address the remaining menu/HUD corruption.
+    // Apply it automatically in Auto mode, exactly like the Vauzi710 precedent above.
+    // Explicit GMEM/Sysmem selection and driver_import/tu_debug.txt still take precedence
+    // (ApplyRenderMode handles the external override).
+    std::string lowEndReason;
+    const bool lowEndAdreno = IsLowEndAdreno6xxGpu(lowEndReason);
+    if (effectiveRenderMode == EAndroidRenderMode::Auto && lowEndAdreno)
     {
         effectiveRenderMode = EAndroidRenderMode::Sysmem;
-        LOG("Low-end Adreno 6xx SoC detected: Auto render mode selects Sysmem (avoids Turnip GMEM corruption on this GPU generation).");
+        driverTuDebugPreset = GetLowEndAdrenoTuDebugPreset();
+        LOGF("Low-end Adreno 6xx detected ({}): Auto render mode selects the compatibility preset.", lowEndReason);
+    }
+    else
+    {
+        LOGF("Adreno GPU check: {} (render mode {}).", lowEndReason, RenderModeName(effectiveRenderMode));
     }
 
     if (g_runtimeVulkanDriver == EAndroidVulkanDriver::ExperimentalA725)
     {
         effectiveRenderMode = EAndroidRenderMode::Sysmem;
         driverTuDebugPreset = "sysmem,nobin";
+        allowTuDebugOverride = false;
         LOG("A725 Performance experimental driver: forcing TU_DEBUG=sysmem,nobin.");
     }
 
-    ApplyRenderMode(effectiveRenderMode, driverTuDebugPreset == nullptr, driverTuDebugPreset);
+    ApplyRenderMode(effectiveRenderMode, allowTuDebugOverride, driverTuDebugPreset);
     ApplyLayerSettingsOverride(turnipDir);
 
     // The adrenotools hooks (main_hook, file_redirect_hook, gsl_alloc_hook,
@@ -1363,4 +1581,9 @@ void AndroidMarkVulkanStartupSuccessful()
     g_vulkanStartupStateActive = false;
     g_vulkanStartupSuccessReported = true;
     LOG("Vulkan boot recovery: device + usable swapchain created successfully; startup marker cleared.");
+}
+
+int AndroidGetDetectedAdrenoModel()
+{
+    return GetAdrenoModel();
 }

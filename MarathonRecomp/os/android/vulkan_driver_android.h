@@ -17,3 +17,9 @@ extern "C" void *AndroidGetCustomVulkanLoader();
 // deliberately separate from AndroidGetCustomVulkanLoader(): dlopen/vkGetInstanceProcAddr
 // succeeding does not prove that the selected driver can finish Vulkan startup.
 void AndroidMarkVulkanStartupSuccessful();
+
+// Adreno model number detected from kgsl sysfs BEFORE any Vulkan driver was loaded (e.g.
+// 610), or 0 when the kernel nodes were unreadable. Video uses it to cross-check that
+// pre-load decision against the Vulkan device name, so a wrong guess shows up in the log
+// instead of silently applying (or skipping) the low-end compatibility preset.
+int AndroidGetDetectedAdrenoModel();

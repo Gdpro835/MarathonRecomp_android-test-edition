@@ -150,13 +150,31 @@ Requires JDK 17 and the Android SDK (compileSdk 34). The debug APK lands at
 
 ### Optional: bundled drivers
 
-> **Adreno 6xx / Snapdragon 662 / 680 (Adreno 610) note:** older Adreno 6xx GPUs
-> are supported. The launcher automatically selects **Sysmem** render mode
-> (TU_DEBUG=sysmem) on these SoCs in Auto mode, which fixes corrupt video
-> playback on this GPU generation. If you still see graphical corruption,
-> capture the app log (`log.txt` via the launcher's Log button) — the build
-> logs the exact texture formats the game uses, which helps identify the
-> remaining issue.
+> **Adreno 610-class GPUs (Adreno 605–619: Snapdragon 460 / 480 / 662 / 665 / 680
+> and similar):** this GPU generation renders the game's own render targets
+> incorrectly through Turnip's GMEM path — a turquoise scene background and menu
+> text drawn several times over itself, while the on-screen overlay stays sharp.
+>
+> The app now identifies the exact GPU from the kernel (`/sys/class/kgsl/kgsl-3d0/gpu_model`,
+> falling back to `gpu_chipid` and then to a table of known SoCs) *before* the Vulkan
+> driver is loaded, and applies a compatibility preset automatically in **Auto**
+> render mode. The default is `TU_DEBUG=sysmem,noubwc`.
+>
+> If your device still shows corruption, create `a610_preset.txt` in the
+> `driver_import/` folder containing a single digit and relaunch:
+>
+> | Preset | `TU_DEBUG` | Notes |
+> |-------:|------------|-------|
+> | 0 | `sysmem` | previous behaviour, UBWC left on |
+> | 1 | `sysmem,noubwc` | **default** |
+> | 2 | `sysmem,noubwc,nolrz` | also disables low-resolution Z |
+> | 3 | `sysmem,noubwc,nolrz,nobin` | slowest, most conservative |
+> | 4 | `none` | stock GMEM, for comparison shots |
+>
+> Every launch records the GPU it detected, the preset it chose and the `TU_DEBUG`
+> string that reached the driver in `log.txt` (launcher → Log button), so a report
+> that says "preset 2 looks correct" is enough to pin the fix down. A
+> `driver_import/tu_debug.txt` still overrides the preset entirely.
 
 
 Copy community Turnip driver builds into `android-apk/app/src/main/assets/bundled_driver/`
