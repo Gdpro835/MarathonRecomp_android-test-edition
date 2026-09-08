@@ -3877,10 +3877,13 @@ static GuestTexture* CreateTexture(uint32_t width, uint32_t height, uint32_t dep
     // formats Sonic 2006 actually creates at runtime, so test logs reveal
     // whether DXT/BC textures really go through this path.
     {
-        static uint32_t s_loggedCreateTextureCount;
-        if (s_loggedCreateTextureCount < 12)
+        // Log each distinct guest format once rather than the first N calls: the render
+        // targets created during startup used up the whole budget before a single content
+        // texture was loaded, which is exactly the case this diagnostic exists to answer.
+        static std::set<uint32_t> s_loggedCreateTextureFormats;
+        if (s_loggedCreateTextureFormats.size() < 32 &&
+            s_loggedCreateTextureFormats.insert(format).second)
         {
-            ++s_loggedCreateTextureCount;
             LOGF("CreateTexture diag: {}x{}x{} type={} format=0x{:08X} usage=0x{:X} -> RenderFormat {}",
                 width, height, depth, type, format, usage, uint32_t(ConvertFormat(format)));
         }
