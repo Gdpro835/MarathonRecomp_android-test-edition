@@ -858,6 +858,14 @@ static void ProcessDriverImportDir(const std::filesystem::path &turnipDir)
             "                     3 = sysmem,noubwc,nolrz,nobin\n"
             "                     4 = stock GMEM, for comparison\n"
             "  tu_debug.txt     - raw TU_DEBUG string, overrides the preset entirely\n"
+            "  ir3_debug.txt    - IR3_SHADER_DEBUG for Mesa's shader compiler. Try when\n"
+            "                     geometry stretches into spikes and colours go neon:\n"
+            "                     nofp16   (keep shader maths at full precision)\n"
+            "                     spillall (avoid register-allocation bugs, slow)\n"
+            "                     nocache  (needed alongside the above on a second run)\n"
+            "                     Values combine with commas: nofp16,nocache\n"
+            "  force_upload_heap.txt - undo the staged buffer upload fix (for A/B tests)\n"
+            "  force_no_bc.txt  - empty file; stop using compressed BC textures natively\n"
             "  disable_conditional_survey.txt - empty file; renders every draw\n"
             "                     unconditionally (tests the occlusion-survey path)\n"
             "\n"
@@ -1339,6 +1347,36 @@ static void ApplyFdDevFeatures()
     }
 }
 
+// ir3 is Mesa's shader-compiler backend for Adreno, and IR3_SHADER_DEBUG is the only lever
+// an application has over how it generates code. It is worth reaching for when a specific
+// GPU draws stretched triangles and wrong colours while the geometry and draw calls handed
+// to it are correct - that pattern points at shader code generation rather than at anything
+// the renderer did. Values can be combined with commas:
+//
+//   nofp16   - stop lowering mediump arithmetic to 16-bit float. Half-precision position
+//              maths is a classic source of vertices flung off-screen, and half-precision
+//              colour maths overflows to neon on values an HDR pass pushes above 1.0.
+//   spillall - force register spilling everywhere, which sidesteps register-allocation
+//              bugs. Slow, but a very direct test: low-end parts like the a610 have a
+//              small register file and hit allocation paths that larger GPUs never reach.
+//   nouboopt - disable promoting UBO loads to constants.
+//   nocache  - bypass the shader disk cache, so the options above are not defeated by
+//              binaries compiled during an earlier run.
+//
+// Left unset by default: these are diagnostic switches with a real performance cost, and
+// the right one to keep depends on which of them turns out to help.
+static void ApplyIr3ShaderDebug()
+{
+    char buffer[256]{};
+
+    std::filesystem::path foundPath;
+    if (ReadDriverImportControlFile("ir3_debug.txt", buffer, sizeof(buffer), &foundPath))
+    {
+        setenv("IR3_SHADER_DEBUG", buffer, 1);
+        LOGF("Applied IR3_SHADER_DEBUG override from {}: \"{}\".", foundPath.string(), buffer);
+    }
+}
+
 // Optional: if a "vk_layer_settings.txt" file is pushed alongside the driver, it's pointed to via
 // VK_LAYER_SETTINGS_PATH so VK_LAYER_KHRONOS_validation picks up settings from it (e.g. enabling
 // Synchronization Validation) without rebuilding the APK. See
@@ -1426,6 +1464,9 @@ void *AndroidGetCustomVulkanLoader()
     // Applies to every driver path (custom and system) - the HyperOS UBWC interop
     // glitch is in the display stack, not in a particular driver build.
     ApplyFdDevFeatures();
+
+    // Both are read by Mesa at driver init, so they have to be set before dlopen.
+    ApplyIr3ShaderDebug();
 
     PrepareVulkanStartup();
 
