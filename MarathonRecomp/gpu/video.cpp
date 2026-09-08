@@ -427,6 +427,13 @@ static std::unique_ptr<RenderDescriptorSet> g_conditionalSurveyDescriptorSet;
 // without rebuilding the APK.
 static bool g_forceDisableConditionalSurvey = false;
 
+// The occlusion survey keeps its atomic counter buffer in descriptor set 4, a fifth set on
+// top of the three texture sets and the sampler set. Adreno hardware has exactly five
+// bindless descriptor sets and Turnip keeps one of them for its own use, so it advertises
+// four and set index 4 is off the end. Binding it there lands on the set the driver is
+// using internally. Cleared for such devices, which then render every draw unconditionally.
+static bool g_conditionalSurveyDescriptorSetSupported = true;
+
 #if defined(__ANDROID__)
 // Marker files are looked for in every folder a tester can realistically write to. This
 // matters more than it looks: file managers cannot browse Android/data at all on Android
@@ -1958,7 +1965,8 @@ static void BeginCommandList()
     commandList->setGraphicsDescriptorSet(g_textureDescriptorSet.get(), 1);
     commandList->setGraphicsDescriptorSet(g_textureDescriptorSet.get(), 2);
     commandList->setGraphicsDescriptorSet(g_samplerDescriptorSet.get(), 3);
-    commandList->setGraphicsDescriptorSet(g_conditionalSurveyDescriptorSet.get(), 4);
+    if (g_conditionalSurveyDescriptorSetSupported)
+        commandList->setGraphicsDescriptorSet(g_conditionalSurveyDescriptorSet.get(), 4);
 
     g_readyForCommands = true;
     g_readyForCommands.notify_one();
@@ -2310,6 +2318,34 @@ bool Video::CreateHostDevice(const char *sdlVideoDriver, bool graphicsApiRetry)
                     "driver_import/force_upload_heap.txt to map GPU memory directly instead).");
             }
         }
+
+        // Descriptor set 4 - the occlusion survey's counter buffer. Adreno has five
+        // bindless descriptor sets in hardware and Turnip reserves one for itself,
+        // leaving four for applications, so index 4 is past the end and writes into
+        // the set the driver is using. Everything the shaders read through the other
+        // sets - textures, samplers, constants - is then resolved against whatever
+        // the driver left there, which is why colours come out saturated to the
+        // corners of the cube and the occasional triangle is drawn from nonsense
+        // vertex data. UnleashedRecomp binds sets 0 to 3 only and has never needed
+        // the survey, which is why it renders correctly on the same phone and the
+        // same driver build.
+        if (deviceName.find("adreno") != std::string::npos ||
+            deviceName.find("turnip") != std::string::npos)
+        {
+            if (AndroidMarkerFileExists("force_conditional_survey.txt"))
+            {
+                LOG_WARNING("force_conditional_survey.txt present: keeping the occlusion survey on "
+                            "descriptor set 4, which this driver does not expose. Expect corrupted "
+                            "colours and geometry; delete the file to disable the survey again.");
+            }
+            else
+            {
+                g_conditionalSurveyDescriptorSetSupported = false;
+                g_forceDisableConditionalSurvey = true;
+                LOG("Occlusion survey disabled: this driver exposes four descriptor sets and the "
+                    "survey needs a fifth. Every draw renders unconditionally.");
+            }
+        }
     }
 #endif
 
@@ -2544,7 +2580,10 @@ bool Video::CreateHostDevice(const char *sdlVideoDriver, bool graphicsApiRetry)
     RenderBufferStructuredView conditionalSurveyStructuredView(sizeof(uint32_t));
     g_conditionalSurveyDescriptorSet->setBuffer(0, g_conditionalSurveyBuffer.get(), 0, &conditionalSurveyStructuredView);
 
-    pipelineLayoutBuilder.addDescriptorSet(conditionalSurveyDescriptorSetBuilder);
+    // Only when the device actually exposes a fifth set; otherwise the layout stops at
+    // four and the survey stays off for the life of the process.
+    if (g_conditionalSurveyDescriptorSetSupported)
+        pipelineLayoutBuilder.addDescriptorSet(conditionalSurveyDescriptorSetBuilder);
 
     if (g_backend != Backend::D3D12)
     {
