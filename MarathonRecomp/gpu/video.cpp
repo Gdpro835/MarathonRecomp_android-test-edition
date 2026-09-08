@@ -427,6 +427,35 @@ static std::unique_ptr<RenderDescriptorSet> g_conditionalSurveyDescriptorSet;
 // without rebuilding the APK.
 static bool g_forceDisableConditionalSurvey = false;
 
+#if defined(__ANDROID__)
+// Marker files are looked for in every folder a tester can realistically write to. This
+// matters more than it looks: file managers cannot browse Android/data at all on Android
+// 11+, so a marker that is only searched for there is unreachable on a modern phone
+// without adb or the launcher's document provider, and the toggle silently appears to do
+// nothing. The Android/media twin is the one location a plain file manager can write.
+static bool AndroidMarkerFileExists(const char *fileName)
+{
+    const std::filesystem::path *importBases[] =
+    {
+        &os::android::GetExternalFilesDir(),
+        &os::android::GetExternalMediaDir(),
+        &os::android::GetDataRoot(),
+    };
+
+    std::error_code ec;
+    for (const std::filesystem::path *base : importBases)
+    {
+        if (!base->empty() && std::filesystem::exists(*base / "driver_import" / fileName, ec))
+            return true;
+    }
+
+    // Internal storage: shell-created files under Android/data are not readable by the app
+    // on some devices, so adb run-as into the internal dir stays supported.
+    const std::filesystem::path &internalDir = os::android::GetInternalFilesDir();
+    return !internalDir.empty() && std::filesystem::exists(internalDir / fileName, ec);
+}
+#endif
+
 enum
 {
     TEXTURE_DESCRIPTOR_NULL_TEXTURE_2D,
@@ -2160,10 +2189,7 @@ bool Video::CreateHostDevice(const char *sdlVideoDriver, bool graphicsApiRetry)
     // shell-created files under Android/data are not readable by the app on some devices)
     // exercises the BC fallback paths on hardware that natively supports BC (e.g. Adreno).
     {
-        std::error_code forceNoBcEc;
-        if (g_capabilities.textureCompressionBC &&
-            (std::filesystem::exists(os::android::GetExternalFilesDir() / "driver_import" / "force_no_bc.txt", forceNoBcEc) ||
-             std::filesystem::exists(os::android::GetInternalFilesDir() / "force_no_bc.txt", forceNoBcEc)))
+        if (g_capabilities.textureCompressionBC && AndroidMarkerFileExists("force_no_bc.txt"))
         {
             g_capabilities.textureCompressionBC = false;
             LOG_WARNING("force_no_bc.txt present: BC texture support disabled to test the fallback paths.");
@@ -2175,10 +2201,7 @@ bool Video::CreateHostDevice(const char *sdlVideoDriver, bool graphicsApiRetry)
         // Adreno/Turnip, which genuinely lacks BC, this WILL corrupt textures. The launcher's
         // "force native BC" debug option writes the marker; it is gated behind Debug options
         // for that reason.
-        std::error_code forceBcEc;
-        if (!g_capabilities.textureCompressionBC &&
-            (std::filesystem::exists(os::android::GetExternalFilesDir() / "driver_import" / "force_bc.txt", forceBcEc) ||
-             std::filesystem::exists(os::android::GetInternalFilesDir() / "force_bc.txt", forceBcEc)))
+        if (!g_capabilities.textureCompressionBC && AndroidMarkerFileExists("force_bc.txt"))
         {
             g_capabilities.textureCompressionBC = true;
             LOG_WARNING("force_bc.txt present: forcing native BC textures and disabling ETC2 transcode. Textures will corrupt if this GPU lacks BC support.");
@@ -2207,9 +2230,7 @@ bool Video::CreateHostDevice(const char *sdlVideoDriver, bool graphicsApiRetry)
     // missing/corrupted scene content on Adreno 6xx Turnip. Marker files are
     // read independently of the BC overrides above.
     {
-        std::error_code disableSurveyEc;
-        if (std::filesystem::exists(os::android::GetExternalFilesDir() / "driver_import" / "disable_conditional_survey.txt", disableSurveyEc) ||
-            std::filesystem::exists(os::android::GetInternalFilesDir() / "disable_conditional_survey.txt", disableSurveyEc))
+        if (AndroidMarkerFileExists("disable_conditional_survey.txt"))
         {
             g_forceDisableConditionalSurvey = true;
             LOG_WARNING("disable_conditional_survey.txt present: occlusion survey disabled (every draw renders unconditionally).");

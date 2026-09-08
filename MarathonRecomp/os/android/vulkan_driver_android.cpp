@@ -843,7 +843,26 @@ static void ProcessDriverImportDir(const std::filesystem::path &turnipDir)
             "scanned on launch exactly like Android/data/<app>/files/driver_import/;\n"
             "processed files move to the installed/ subfolder. See the readme.txt\n"
             "there for TU_DEBUG and capture options. The log file (log.txt) is\n"
-            "available through the launcher's log button.\n");
+            "available through the launcher's log button.\n"
+            "\n"
+            "USE THIS FOLDER FOR SETTINGS FILES ON ANDROID 11+\n"
+            "-------------------------------------------------\n"
+            "File managers cannot open Android/data on Android 11 and newer, so put\n"
+            "the small text settings files HERE instead - they are read from this\n"
+            "folder too, and this one you can actually browse:\n"
+            "\n"
+            "  a610_preset.txt  - one digit, Adreno 610-class rendering workaround:\n"
+            "                     0 = sysmem\n"
+            "                     1 = sysmem,noubwc   (default)\n"
+            "                     2 = sysmem,noubwc,nolrz\n"
+            "                     3 = sysmem,noubwc,nolrz,nobin\n"
+            "                     4 = stock GMEM, for comparison\n"
+            "  tu_debug.txt     - raw TU_DEBUG string, overrides the preset entirely\n"
+            "  disable_conditional_survey.txt - empty file; renders every draw\n"
+            "                     unconditionally (tests the occlusion-survey path)\n"
+            "\n"
+            "Every launch writes which of these it found, and the path it found them\n"
+            "at, into log.txt - check there if a setting seems to do nothing.\n");
         ScanDriverImportDir(mediaImportDir, turnipDir);
     }
 
@@ -992,6 +1011,49 @@ static bool ReadTrimmedTextFile(const std::filesystem::path &path, char *buffer,
 
     buffer[bytesRead] = '\0';
     return bytesRead > 0;
+}
+
+// Read a small text control file from any of the driver_import folders, and report which
+// one supplied it. Originally only the Android/data copy was consulted, but file managers
+// cannot browse Android/data at all on Android 11+, so on a modern phone a tester often
+// cannot create these files in the one place that was being read - the setting then looks
+// like an option that does nothing rather than a file that never arrived. The driver .so
+// scan already searches the Android/media twin folder for exactly this reason; the control
+// files now follow the same three locations, in the same order.
+static bool ReadDriverImportControlFile(const char *fileName, char *buffer, size_t bufferSize,
+    std::filesystem::path *foundPath = nullptr, std::string *searchedPaths = nullptr)
+{
+    const std::filesystem::path *bases[] =
+    {
+        &os::android::GetExternalFilesDir(),
+        &os::android::GetExternalMediaDir(),
+        &os::android::GetDataRoot(),
+    };
+
+    for (const std::filesystem::path *base : bases)
+    {
+        if (base->empty())
+            continue;
+
+        std::filesystem::path path = *base / "driver_import" / fileName;
+        if (ReadTrimmedTextFile(path, buffer, bufferSize))
+        {
+            if (foundPath != nullptr)
+                *foundPath = std::move(path);
+
+            return true;
+        }
+
+        if (searchedPaths != nullptr)
+        {
+            if (!searchedPaths->empty())
+                searchedPaths->append(", ");
+
+            searchedPaths->append(path.string());
+        }
+    }
+
+    return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -1150,27 +1212,21 @@ static const char *GetLowEndAdrenoTuDebugPreset()
     int preset = A610_DEFAULT_PRESET;
 
     char buffer[64]{};
-    const std::filesystem::path &externalDir = os::android::GetExternalFilesDir();
-    const std::filesystem::path presetPath = externalDir.empty()
-        ? std::filesystem::path()
-        : externalDir / "driver_import" / "a610_preset.txt";
+    std::filesystem::path foundPath;
+    std::string searchedPaths;
 
     // Report the exact path and whether it was actually read. Logging only the resulting
     // preset is not enough: "preset 1" looks identical whether it came from the file or
     // from the built-in default, so a tester who edits the file and sees no visual change
     // cannot tell a driver option that does nothing apart from an edit that never arrived.
-    if (presetPath.empty())
-    {
-        LOG_WARNING("Cannot locate external files dir; a610_preset.txt cannot be read this launch.");
-    }
-    else if (ReadTrimmedTextFile(presetPath, buffer, sizeof(buffer)))
+    if (ReadDriverImportControlFile("a610_preset.txt", buffer, sizeof(buffer), &foundPath, &searchedPaths))
     {
         const int requested = atoi(buffer);
         if (requested >= 0 && requested < A610_PRESET_COUNT)
         {
             preset = requested;
             LOGF("Read a610_preset.txt (\"{}\") from {}: preset {} requested.",
-                buffer, presetPath.string(), preset);
+                buffer, foundPath.string(), preset);
         }
         else
         {
@@ -1180,7 +1236,8 @@ static const char *GetLowEndAdrenoTuDebugPreset()
     }
     else
     {
-        LOGF("No a610_preset.txt at {}; using built-in preset {}.", presetPath.string(), preset);
+        LOGF("No a610_preset.txt found; using built-in preset {}. Searched: {}.",
+            preset, searchedPaths.empty() ? "(no writable folder)" : searchedPaths.c_str());
     }
 
     LOGF("Low-end Adreno compatibility preset {} of 0..{}: TU_DEBUG=\"{}\". "
@@ -1237,15 +1294,13 @@ static void ApplyRenderMode(EAndroidRenderMode renderMode, bool allowDiagnosticO
         return;
     }
 
-    const std::filesystem::path &externalDir = os::android::GetExternalFilesDir();
-    std::filesystem::path externalPath = externalDir / "driver_import" / "tu_debug.txt";
-
-    if (externalDir.empty() || !ReadTrimmedTextFile(externalPath, buffer, sizeof(buffer)))
+    std::filesystem::path foundPath;
+    if (!ReadDriverImportControlFile("tu_debug.txt", buffer, sizeof(buffer), &foundPath))
         return;
 
     setenv("TU_DEBUG", buffer, 1);
     LOGF("Applied diagnostic TU_DEBUG override from {}: \"{}\" (overrides Render Mode {}).",
-        externalPath.string(), buffer, modeName);
+        foundPath.string(), buffer, modeName);
 }
 
 // Mesa feature flags via FD_DEV_FEATURES. Xiaomi HyperOS 3 ships a display stack whose
@@ -1257,12 +1312,11 @@ static void ApplyFdDevFeatures()
 {
     char buffer[256]{};
 
-    const std::filesystem::path &externalDir = os::android::GetExternalFilesDir();
-    if (!externalDir.empty() &&
-        ReadTrimmedTextFile(externalDir / "driver_import" / "fd_dev_features.txt", buffer, sizeof(buffer)))
+    std::filesystem::path foundPath;
+    if (ReadDriverImportControlFile("fd_dev_features.txt", buffer, sizeof(buffer), &foundPath))
     {
         setenv("FD_DEV_FEATURES", buffer, 1);
-        LOGF("Applied FD_DEV_FEATURES override from fd_dev_features.txt: \"{}\".", buffer);
+        LOGF("Applied FD_DEV_FEATURES override from {}: \"{}\".", foundPath.string(), buffer);
         return;
     }
 
