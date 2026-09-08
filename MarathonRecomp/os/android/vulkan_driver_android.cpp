@@ -1151,20 +1151,36 @@ static const char *GetLowEndAdrenoTuDebugPreset()
 
     char buffer[64]{};
     const std::filesystem::path &externalDir = os::android::GetExternalFilesDir();
-    if (!externalDir.empty() &&
-        ReadTrimmedTextFile(externalDir / "driver_import" / "a610_preset.txt", buffer, sizeof(buffer)))
+    const std::filesystem::path presetPath = externalDir.empty()
+        ? std::filesystem::path()
+        : externalDir / "driver_import" / "a610_preset.txt";
+
+    // Report the exact path and whether it was actually read. Logging only the resulting
+    // preset is not enough: "preset 1" looks identical whether it came from the file or
+    // from the built-in default, so a tester who edits the file and sees no visual change
+    // cannot tell a driver option that does nothing apart from an edit that never arrived.
+    if (presetPath.empty())
+    {
+        LOG_WARNING("Cannot locate external files dir; a610_preset.txt cannot be read this launch.");
+    }
+    else if (ReadTrimmedTextFile(presetPath, buffer, sizeof(buffer)))
     {
         const int requested = atoi(buffer);
         if (requested >= 0 && requested < A610_PRESET_COUNT)
         {
             preset = requested;
-            LOGF("Low-end Adreno preset overridden by a610_preset.txt: {}.", preset);
+            LOGF("Read a610_preset.txt (\"{}\") from {}: preset {} requested.",
+                buffer, presetPath.string(), preset);
         }
         else
         {
             LOGF_WARNING("Ignoring invalid a610_preset.txt value \"{}\" (expected 0..{}); using preset {}.",
                 buffer, A610_PRESET_COUNT - 1, preset);
         }
+    }
+    else
+    {
+        LOGF("No a610_preset.txt at {}; using built-in preset {}.", presetPath.string(), preset);
     }
 
     LOGF("Low-end Adreno compatibility preset {} of 0..{}: TU_DEBUG=\"{}\". "

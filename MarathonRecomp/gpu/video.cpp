@@ -2141,6 +2141,16 @@ bool Video::CreateHostDevice(const char *sdlVideoDriver, bool graphicsApiRetry)
                         "610-class device with corrupted menus, put \"sysmem,noubwc\" into "
                         "driver_import/tu_debug.txt to apply it by hand.");
         }
+
+        // Echo the video settings that were actually loaded, next to the file they came from.
+        // Several rendering options cannot be changed from the in-game menu and have to be
+        // edited in config.toml by hand; without this line a hand-edited setting that never
+        // took effect is indistinguishable from one that took effect and changed nothing.
+        LOGF("Video config from {}: AspectRatio={} ResolutionScale={:.3f} AntiAliasing={}.",
+            Config::GetConfigPath().string(),
+            Config::AspectRatio.ToString(false),
+            float(Config::ResolutionScale),
+            Config::AntiAliasing.ToString(false));
     }
 #endif
 
