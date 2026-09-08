@@ -2277,6 +2277,39 @@ bool Video::CreateHostDevice(const char *sdlVideoDriver, bool graphicsApiRetry)
             g_capabilities.dynamicDepthBias = false;
             LOG("Mali compatibility path: conservative Vulkan capabilities enabled.");
         }
+
+        // Guest buffer uploads. With a GPU upload heap, UnlockBuffer maps the live vertex
+        // or index buffer on the guest thread and overwrites it in place - no fence, no
+        // buffer renaming, nothing ordering that write against a frame the GPU is still
+        // reading. The staging path instead records an ordered copy on the command list
+        // with COPY-write/GRAPHICS-read barriers around it.
+        //
+        // On a discrete GPU the upload heap is separate memory reached over PCIe and the
+        // race is easy to win by accident. On a phone it is ordinary shared memory: the
+        // GPU reads the very bytes being rewritten, so a mesh whose buffer is refilled
+        // while the previous frame is still in flight is drawn from half-updated
+        // vertices. That reads on screen as triangles stretched off to infinity and as
+        // colours taken from whatever the neighbouring bytes happened to be - and no
+        // driver option can affect it, because nothing is wrong on the driver's side.
+        //
+        // Mali already avoided this above, as part of a general conservative profile.
+        // Do it for every Android GPU: the staged copy costs one extra memcpy per
+        // buffer update, which is a small price next to drawing torn geometry.
+        if (g_capabilities.gpuUploadHeap)
+        {
+            if (AndroidMarkerFileExists("force_upload_heap.txt"))
+            {
+                LOG_WARNING("force_upload_heap.txt present: guest buffers are written straight into "
+                            "GPU memory with no synchronisation. Expect stretched geometry and wrong "
+                            "colours; delete the file to return to the staged upload path.");
+            }
+            else
+            {
+                g_capabilities.gpuUploadHeap = false;
+                LOG("Guest buffer uploads use the staged copy path (create "
+                    "driver_import/force_upload_heap.txt to map GPU memory directly instead).");
+            }
+        }
     }
 #endif
 
