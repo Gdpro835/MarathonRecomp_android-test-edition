@@ -952,7 +952,17 @@ namespace plume {
         info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
         info.pNext = nullptr;
         info.buffer = vk;
-        return vkGetBufferDeviceAddress(device->vk, &info);
+
+        // Buffer device address was promoted to core in Vulkan 1.2, but Adreno Android
+        // drivers may expose only VK_KHR_buffer_device_address (and therefore only the
+        // KHR entry point). volkLoadInstance() is not sufficient for device-level
+        // extension functions; prefer the core pointer when it exists and fall back to
+        // the KHR pointer otherwise. The guest shader constant buffers all use these
+        // addresses, so returning zero/garbage here corrupts both vertex transforms and
+        // material colours while host ImGui, which does not use BDA, remains correct.
+        if (vkGetBufferDeviceAddress != nullptr)
+            return vkGetBufferDeviceAddress(device->vk, &info);
+        return vkGetBufferDeviceAddressKHR(device->vk, &info);
     }
 
     // VulkanBufferFormattedView
@@ -4135,6 +4145,11 @@ namespace plume {
             fprintf(stderr, "vkCreateDevice failed with error code 0x%X.\n", res);
             return;
         }
+
+        // Resolve device-level functions through the newly created VkDevice. On Android,
+        // resolving only through the instance can leave the core BDA name null even when
+        // VK_KHR_buffer_device_address is enabled.
+        volkLoadDevice(vk);
 
         for (uint32_t i = 0; i < queueFamilyCount; i++) {
             for (uint32_t j = 0; j < queueFamilies[i].queues.size(); j++) {
