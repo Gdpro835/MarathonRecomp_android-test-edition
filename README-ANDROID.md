@@ -176,6 +176,24 @@ Requires JDK 17 and the Android SDK (compileSdk 34). The debug APK lands at
 > that says "preset 2 looks correct" is enough to pin the fix down. A
 > `driver_import/tu_debug.txt` still overrides the preset entirely.
 
+> **Half-float vertex data experiment (Adreno 610):** device logs showed the
+> corrupted meshes are exactly the ones whose vertex declarations contain
+> `FLOAT16_2`/`FLOAT16_4` attributes (character skinning weights, normals,
+> tangents, texcoords), while declarations using only `FLOAT32` attributes
+> render correctly. Half-float vertex attributes are decoded by the driver's
+> fixed-function vertex fetch — `TU_DEBUG` and `IR3_SHADER_DEBUG` cannot
+> influence it. Create an empty
+>
+> > `driver_import/no_fp16_fetch.txt`
+>
+> and relaunch: such vertex streams are rewritten to equivalent `FLOAT32`
+> streams on the CPU, so the vertex fetch only ever sees 32-bit formats.
+> Expect longer load times and more memory use while it is enabled; every
+> conversion is logged (`fp32 vertex declaration shadow created...`) in
+> `log.txt`, and the marker line `no_fp16_fetch.txt present: ...` confirms it
+> is active. If this fixes the picture on Adreno 610, the workaround will be
+> enabled automatically for that GPU family.
+
 
 Copy community Turnip driver builds into `android-apk/app/src/main/assets/bundled_driver/`
 with the exact names from `MarathonRecomp/os/android/vulkan_driver_android.cpp`

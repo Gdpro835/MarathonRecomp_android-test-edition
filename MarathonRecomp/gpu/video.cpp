@@ -267,6 +267,16 @@ static RenderVertexBufferView g_vertexBufferViews[16];
 static RenderInputSlot g_inputSlots[16];
 static RenderIndexBufferView g_indexBufferView({}, 0, RenderFormat::R16_UINT);
 
+// App-side FLOAT16 -> FLOAT32 vertex attribute conversion (Adreno 610 VFD
+// experiment). When enabled through driver_import/no_fp16_fetch.txt, guest
+// vertex streams that contain FLOAT16_2/FLOAT16_4 attributes are converted to
+// FLOAT32 on the CPU at draw time so the fixed-function vertex fetch never has
+// to decode half-float attributes. See ApplyFp32StreamConversion below.
+static bool g_convertFp16VertexAttributes = false;
+static GuestBuffer* g_streamGuestBuffers[16];
+static uint32_t g_streamGuestOffsets[16];
+static uint32_t g_streamGuestStrides[16];
+
 struct DirtyStates
 {
     bool renderTargetAndDepthStencil;
@@ -2222,6 +2232,19 @@ bool Video::CreateHostDevice(const char *sdlVideoDriver, bool graphicsApiRetry)
             g_capabilities.textureCompressionBC = true;
             LOG_WARNING("force_bc.txt present: forcing native BC textures and disabling ETC2 transcode. Textures will corrupt if this GPU lacks BC support.");
         }
+
+        // Adreno 610 experiment: the tester logs show the corrupted meshes are exactly
+        // the ones whose vertex declarations contain FLOAT16_2/FLOAT16_4 attributes
+        // (character skinning weights/normals/tangents/texcoords), while declarations
+        // using only FLOAT32 attributes render correctly. Half->float decoding for
+        // vertex attributes is done by the driver's fixed-function vertex fetch, which
+        // IR3_SHADER_DEBUG cannot influence. This marker converts those attributes to
+        // FLOAT32 on the CPU so the vertex fetch only ever sees 32-bit formats.
+        if (AndroidMarkerFileExists("no_fp16_fetch.txt"))
+        {
+            g_convertFp16VertexAttributes = true;
+            LOG_WARNING("no_fp16_fetch.txt present: FLOAT16 vertex attributes will be converted to FLOAT32 on the CPU (Adreno 610 vertex fetch experiment).");
+        }
     }
 #endif
 
@@ -2925,6 +2948,9 @@ static std::atomic<uint32_t> g_bufferUploadCount = 0;
 template<typename T>
 static void UnlockBuffer(GuestBuffer* buffer, bool useCopyQueue)
 {
+    // Invalidate any CPU-converted copy of this buffer's vertex data.
+    buffer->uploadEpoch = ++g_bufferUploadCount;
+
     auto copyBuffer = [&](T* dest)
         {
             auto src = reinterpret_cast<const T*>(buffer->mappedMemory);
@@ -5512,8 +5538,235 @@ static void ProcAddPipeline(const RenderCommand& cmd)
 static constexpr int32_t COMMON_DEPTH_BIAS_VALUE = int32_t((1 << 24) * 0.002f);
 static constexpr float COMMON_SLOPE_SCALED_DEPTH_BIAS_VALUE = 1.0f;
 
+// ----------------------------------------------------------------------------
+// FLOAT16 -> FLOAT32 vertex stream conversion (Adreno 610 vertex fetch
+// experiment, enabled with driver_import/no_fp16_fetch.txt).
+//
+// The tester logs showed the corrupted meshes are exactly the ones whose vertex
+// declarations carry FLOAT16_2/FLOAT16_4 attributes; declarations using only
+// FLOAT32 attributes render correctly. Half-float vertex attributes are decoded
+// by the driver's fixed-function vertex fetch (not by the shader compiler, so
+// IR3_SHADER_DEBUG cannot influence them). This path rewrites such streams into
+// equivalent FLOAT32 streams on the CPU, using the guest memory mirror (which
+// still holds the big-endian original data) as the source.
+// ----------------------------------------------------------------------------
+
+// Bit-exact IEEE 754 half -> float conversion.
+static float HalfToFloat(uint16_t half)
+{
+    const uint32_t sign = uint32_t(half & 0x8000) << 16;
+    const uint32_t exponent = (half >> 10) & 0x1F;
+    uint32_t mantissa = half & 0x3FF;
+
+    uint32_t bits;
+    if (exponent == 0)
+    {
+        if (mantissa == 0)
+        {
+            bits = sign; // +/- zero
+        }
+        else
+        {
+            // Subnormal half: renormalize into a float.
+            uint32_t shift = 0;
+            do
+            {
+                shift++;
+                mantissa <<= 1;
+            } while ((mantissa & 0x400) == 0);
+
+            bits = sign | ((127 - 15 - shift + 1) << 23) | ((mantissa & 0x3FF) << 13);
+        }
+    }
+    else if (exponent == 0x1F)
+    {
+        bits = sign | 0x7F800000 | (mantissa << 13); // Infinity / NaN
+    }
+    else
+    {
+        bits = sign | ((exponent - 15 + 127) << 23) | (mantissa << 13);
+    }
+
+    float result;
+    memcpy(&result, &bits, sizeof(result));
+    return result;
+}
+
+struct Fp32StreamCacheEntry
+{
+    GuestBuffer* buffer = nullptr;
+    XXH64_hash_t declarationHash = 0;
+    uint32_t offset = 0;
+    uint32_t guestStride = 0;
+    uint32_t bufferEpoch = 0;
+    uint32_t newStride = 0;
+    uint32_t convertedSize = 0;
+    std::unique_ptr<RenderBuffer> staging;
+};
+
+static std::vector<Fp32StreamCacheEntry> g_fp32StreamCache;
+
+static bool BuildFp32StreamBuffer(const GuestVertexDeclaration& shadow, uint32_t stream,
+    GuestBuffer& buffer, uint32_t offset, uint32_t stride, Fp32StreamCacheEntry& entry)
+{
+    const GuestVertexDeclaration& original = *shadow.fp32Original;
+    if (buffer.mappedMemory == nullptr || buffer.dataSize <= offset)
+        return false;
+
+    if ((offset % 4) != 0 || (stride % 4) != 0)
+        return false; // Unaligned stream: keep the native half-float path.
+
+    const uint32_t vertexCount = (buffer.dataSize - offset) / stride;
+    if (vertexCount == 0)
+        return false;
+
+    const uint32_t newStride = stride + shadow.fp32ExtraStride[stream];
+    const uint32_t convertedSize = newStride * vertexCount;
+
+    entry.buffer = &buffer;
+    entry.declarationHash = shadow.hash;
+    entry.offset = offset;
+    entry.guestStride = stride;
+    entry.bufferEpoch = buffer.uploadEpoch;
+    entry.newStride = newStride;
+    entry.convertedSize = convertedSize;
+
+    entry.staging = g_device->createBuffer(RenderBufferDesc::UploadBuffer(convertedSize));
+    uint8_t* destination = reinterpret_cast<uint8_t*>(entry.staging->map());
+    const uint8_t* source = reinterpret_cast<const uint8_t*>(buffer.mappedMemory) + offset;
+
+    for (uint32_t vertex = 0; vertex < vertexCount; vertex++)
+    {
+        const uint8_t* sourceVertex = source + size_t(vertex) * stride;
+        uint8_t* destinationVertex = destination + size_t(vertex) * newStride;
+        memset(destinationVertex, 0, newStride);
+
+        for (uint32_t i = 0; i < original.inputElementCount; i++)
+        {
+            const RenderInputElement& sourceElement = original.inputElements[i];
+
+            // Slot 15 is the null slot used for auto-added placeholder elements;
+            // it never carries guest vertex data.
+            if (sourceElement.slotIndex != stream || sourceElement.slotIndex == 15)
+                continue;
+
+            const RenderInputElement& convertedElement = shadow.inputElements[i];
+            const uint8_t* sourceData = sourceVertex + sourceElement.alignedByteOffset;
+            uint8_t* destinationData = destinationVertex + convertedElement.alignedByteOffset;
+
+            switch (sourceElement.format)
+            {
+            case RenderFormat::R16G16_FLOAT:
+            {
+                // The unlock path byte-swaps whole 32-bit words, which reverses
+                // the two halves inside every word; the shader undoes that with
+                // swapFloats(.yxwz). The conversion reads each guest byte pair
+                // as a little-endian half directly, yielding the same final
+                // component order without the shader-side swap.
+                float* out = reinterpret_cast<float*>(destinationData);
+                out[0] = HalfToFloat(uint16_t((sourceData[1] << 8) | sourceData[0]));
+                out[1] = HalfToFloat(uint16_t((sourceData[3] << 8) | sourceData[2]));
+                break;
+            }
+            case RenderFormat::R16G16B16A16_FLOAT:
+            {
+                float* out = reinterpret_cast<float*>(destinationData);
+                for (uint32_t j = 0; j < 4; j++)
+                    out[j] = HalfToFloat(uint16_t((sourceData[j * 2 + 1] << 8) | sourceData[j * 2]));
+                break;
+            }
+            default:
+            {
+                // Everything else is copied with the same per-32-bit-word byte
+                // swap the unlock path applies, so the staged copy contains
+                // exactly what the original binding would have contained.
+                const uint32_t size = RenderFormatSize(sourceElement.format);
+                const uint32_t* sourceWords = reinterpret_cast<const uint32_t*>(sourceData);
+                uint32_t* destinationWords = reinterpret_cast<uint32_t*>(destinationData);
+                for (uint32_t w = 0; w < size / 4; w++)
+                    destinationWords[w] = ByteSwap(sourceWords[w]);
+                break;
+            }
+            }
+        }
+    }
+
+    entry.staging->unmap();
+    return true;
+}
+
+static void ApplyFp32StreamConversion()
+{
+    const GuestVertexDeclaration* shadow = g_pipelineState.vertexDeclaration;
+    if (shadow == nullptr || !shadow->isFp32Declaration)
+        return;
+
+    for (uint32_t stream = 0; stream < 16; stream++)
+    {
+        if (!shadow->vertexStreams[stream])
+            continue;
+
+        GuestBuffer* buffer = g_streamGuestBuffers[stream];
+        if (buffer == nullptr)
+            continue;
+
+        const uint32_t offset = g_streamGuestOffsets[stream];
+        const uint32_t stride = g_streamGuestStrides[stream];
+        if (stride == 0 || buffer->dataSize <= offset)
+            continue;
+
+        Fp32StreamCacheEntry* entry = nullptr;
+        for (auto& cached : g_fp32StreamCache)
+        {
+            if (cached.buffer == buffer && cached.declarationHash == shadow->hash &&
+                cached.offset == offset && cached.guestStride == stride &&
+                cached.bufferEpoch == buffer->uploadEpoch && cached.staging != nullptr)
+            {
+                entry = &cached;
+                break;
+            }
+        }
+
+        if (entry == nullptr)
+        {
+            if (g_fp32StreamCache.size() >= 128)
+            {
+                // Recycle the staging buffers through the frame's temp list so
+                // they are only destroyed after in-flight frames complete.
+                for (auto& cached : g_fp32StreamCache)
+                    g_tempBuffers[g_frame].emplace_back(std::move(cached.staging));
+                g_fp32StreamCache.clear();
+            }
+
+            Fp32StreamCacheEntry built;
+            if (!BuildFp32StreamBuffer(*shadow, stream, *buffer, offset, stride, built))
+            {
+                static bool s_loggedFp16ConversionFailure = false;
+                if (!s_loggedFp16ConversionFailure)
+                {
+                    s_loggedFp16ConversionFailure = true;
+                    LOG_WARNING("FLOAT16->FLOAT32 vertex conversion failed for a stream; it keeps the native half-float path.");
+                }
+                continue;
+            }
+
+            g_fp32StreamCache.emplace_back(std::move(built));
+            entry = &g_fp32StreamCache.back();
+        }
+
+        g_vertexBufferViews[stream].buffer = entry->staging->at(0);
+        g_vertexBufferViews[stream].size = entry->convertedSize;
+        g_inputSlots[stream].stride = entry->newStride;
+        g_dirtyStates.vertexStreamFirst = std::min<uint8_t>(g_dirtyStates.vertexStreamFirst, uint8_t(stream));
+        g_dirtyStates.vertexStreamLast = std::max<uint8_t>(g_dirtyStates.vertexStreamLast, uint8_t(stream));
+    }
+}
+
 static void FlushRenderStateForRenderThread()
 {
+    if (g_convertFp16VertexAttributes)
+        ApplyFp32StreamConversion();
+
     auto renderTarget = g_pipelineState.colorWriteEnable ? g_renderTarget : nullptr;
     auto depthStencil = g_pipelineState.zEnable || g_pipelineState.stencilEnable ? g_depthStencil : nullptr;
 
@@ -5719,6 +5972,13 @@ static void ProcDrawPrimitiveUP(const RenderCommand& cmd)
     g_inputSlots[0].stride = args.vertexStreamZeroStride;
     g_dirtyStates.vertexStreamFirst = 0;
 
+    // UP replaces the stream 0 binding with a staging allocation whose layout
+    // matches the guest declaration; invalidate the conversion bookkeeping so
+    // ApplyFp32StreamConversion does not override it with a converted stream.
+    g_streamGuestBuffers[0] = nullptr;
+    g_streamGuestOffsets[0] = 0;
+    g_streamGuestStrides[0] = 0;
+
     uint32_t indexCount = 0;
 
     if (args.primitiveType == D3DPT_QUADLIST)
@@ -5826,7 +6086,146 @@ static RenderFormat ConvertDeclType(uint32_t type)
     }
 }
 
-static GuestVertexDeclaration* CreateVertexDeclarationWithoutAddRef(GuestVertexElement* vertexElements) 
+// Builds the FLOAT32 shadow of a vertex declaration for the Adreno 610 vertex
+// fetch experiment (see ApplyFp32StreamConversion). The shadow keeps the element
+// order of the original (so the two input element arrays stay parallel), widens
+// every FLOAT16_2/FLOAT16_4 element to its FLOAT32 counterpart, re-packs the
+// per-stream offsets, and clears the swapped-component flags of the converted
+// usages because the CPU conversion already emits the final component order.
+static void CreateFp32VertexDeclaration(GuestVertexDeclaration* original)
+{
+    bool hasFp16 = false;
+    for (uint32_t i = 0; i < original->inputElementCount; i++)
+    {
+        const RenderFormat format = original->inputElements[i].format;
+        if (original->inputElements[i].slotIndex != 15 &&
+            (format == RenderFormat::R16G16_FLOAT || format == RenderFormat::R16G16B16A16_FLOAT))
+        {
+            hasFp16 = true;
+            break;
+        }
+    }
+
+    if (!hasFp16)
+        return;
+
+    auto shadow = g_userHeap.AllocPhysical<GuestVertexDeclaration>(ResourceType::VertexDeclaration);
+    shadow->hash = original->hash ^ 0x46503136464C0000ull; // "FP16FL"; keeps the pipeline cache separate
+    shadow->inputElementCount = original->inputElementCount;
+    shadow->vertexElementCount = original->vertexElementCount;
+    shadow->swappedTexcoords = original->swappedTexcoords;
+    shadow->swappedNormals = original->swappedNormals;
+    shadow->swappedBinormals = original->swappedBinormals;
+    shadow->swappedTangents = original->swappedTangents;
+    shadow->swappedBlendWeights = original->swappedBlendWeights;
+    shadow->hasR11G11B10Normal = original->hasR11G11B10Normal;
+    std::copy(std::begin(original->vertexStreams), std::end(original->vertexStreams), shadow->vertexStreams);
+    shadow->indexVertexStream = original->indexVertexStream;
+
+    shadow->vertexElements = std::make_unique<GuestVertexElement[]>(original->vertexElementCount);
+    std::copy(original->vertexElements.get(), original->vertexElements.get() + original->vertexElementCount,
+        shadow->vertexElements.get());
+
+    shadow->inputElements = std::make_unique<RenderInputElement[]>(original->inputElementCount);
+
+    uint32_t streamCursor[16] = {};
+    uint32_t fp16ElementCount = 0;
+
+    for (uint32_t i = 0; i < original->inputElementCount; i++)
+    {
+        const RenderInputElement& source = original->inputElements[i];
+        RenderInputElement& converted = shadow->inputElements[i];
+        converted = source;
+
+        // Slot 15 entries are auto-added placeholders for shader inputs the guest
+        // never binds; they have no vertex data and keep their dummy layout.
+        if (source.slotIndex == 15)
+            continue;
+
+        const uint32_t sourceSize = RenderFormatSize(source.format);
+        RenderFormat targetFormat = source.format;
+        uint32_t targetSize = sourceSize;
+
+        switch (source.format)
+        {
+        case RenderFormat::R16G16_FLOAT:
+            targetFormat = RenderFormat::R32G32_FLOAT;
+            targetSize = 8;
+            ++fp16ElementCount;
+            break;
+        case RenderFormat::R16G16B16A16_FLOAT:
+            targetFormat = RenderFormat::R32G32B32A32_FLOAT;
+            targetSize = 16;
+            ++fp16ElementCount;
+            break;
+        default:
+            // Only 4-byte-multiple formats at 4-byte-aligned offsets participate
+            // in the byte-swapped copy of the conversion; anything else would
+            // corrupt the stream.
+            if ((sourceSize % 4) != 0 || (source.alignedByteOffset % 4) != 0)
+                return; // Give up: this declaration keeps its original layout.
+            break;
+        }
+
+        const uint32_t stream = source.slotIndex;
+        streamCursor[stream] = (streamCursor[stream] + 3) & ~3u;
+        converted.alignedByteOffset = streamCursor[stream];
+        converted.format = targetFormat;
+        streamCursor[stream] += targetSize;
+        shadow->fp32ExtraStride[stream] += targetSize - sourceSize;
+    }
+
+    // The CPU conversion emits the final component order, so the shader-side
+    // swapFloats flags of the converted usages must be cleared. The guest
+    // element list is the authoritative source for which usage each converted
+    // attribute belongs to.
+    for (uint32_t i = 0; i < original->vertexElementCount; i++)
+    {
+        const GuestVertexElement& element = original->vertexElements[i];
+        if (element.type != D3DDECLTYPE_FLOAT16_2 && element.type != D3DDECLTYPE_FLOAT16_4)
+            continue;
+
+        const uint32_t bit = 1u << element.usageIndex;
+        switch (element.usage)
+        {
+        case D3DDECLUSAGE_TEXCOORD:
+            shadow->swappedTexcoords &= ~bit;
+            break;
+        case D3DDECLUSAGE_NORMAL:
+            shadow->swappedNormals &= ~bit;
+            break;
+        case D3DDECLUSAGE_BINORMAL:
+            shadow->swappedBinormals &= ~bit;
+            break;
+        case D3DDECLUSAGE_TANGENT:
+            shadow->swappedTangents &= ~bit;
+            break;
+        case D3DDECLUSAGE_BLENDWEIGHT:
+            shadow->swappedBlendWeights &= ~bit;
+            break;
+        default:
+            break;
+        }
+    }
+
+    shadow->isFp32Declaration = true;
+    shadow->fp32Original = original;
+    original->fp32Declaration = shadow;
+    shadow->AddRef();
+
+    LOGF("fp32 vertex declaration shadow created for {:016X} ({} FLOAT16 elements, extra stride per stream: {}).",
+        original->hash, fp16ElementCount,
+        [&]
+        {
+            std::string extra;
+            for (uint32_t stream = 0; stream < 16; stream++)
+                if (shadow->fp32ExtraStride[stream] != 0)
+                    extra += fmt::format("s{}:+{} ", stream, shadow->fp32ExtraStride[stream]);
+            return extra;
+        }());
+}
+
+static GuestVertexDeclaration* CreateVertexDeclarationWithoutAddRef(GuestVertexElement* vertexElements)
 {
     size_t vertexElementCount = 0;
     auto vertexElement = vertexElements;
@@ -6075,6 +6474,9 @@ static GuestVertexDeclaration* CreateVertexDeclarationWithoutAddRef(GuestVertexE
 
         vertexDeclaration->inputElementCount = uint32_t(inputElements.size());
         vertexDeclaration->vertexElementCount = vertexElementCount + 1;
+
+        if (g_convertFp16VertexAttributes)
+            CreateFp32VertexDeclaration(vertexDeclaration);
     }
 
     vertexDeclaration->AddRef();
@@ -6102,23 +6504,34 @@ static void ProcSetVertexDeclaration(const RenderCommand& cmd)
 {
     auto& args = cmd.setVertexDeclaration;
 
-    if (args.vertexDeclaration != nullptr)
+    // Adreno 610 vertex fetch experiment: transparently swap in the FLOAT32
+    // shadow declaration when one exists. The shadow carries cleared swapped
+    // flags and the converted element layout, so shared constants, pipelines
+    // and vertex bindings all follow the converted layout automatically.
+    GuestVertexDeclaration* vertexDeclaration = args.vertexDeclaration;
+    if (vertexDeclaration != nullptr && g_convertFp16VertexAttributes &&
+        vertexDeclaration->fp32Declaration != nullptr)
     {
-        SetDirtyValue(g_dirtyStates.sharedConstants, g_sharedConstants.swappedTexcoords, args.vertexDeclaration->swappedTexcoords);
-        SetDirtyValue(g_dirtyStates.sharedConstants, g_sharedConstants.swappedNormals, args.vertexDeclaration->swappedNormals);
-        SetDirtyValue(g_dirtyStates.sharedConstants, g_sharedConstants.swappedBinormals, args.vertexDeclaration->swappedBinormals);
-        SetDirtyValue(g_dirtyStates.sharedConstants, g_sharedConstants.swappedTangents, args.vertexDeclaration->swappedTangents);
-        SetDirtyValue(g_dirtyStates.sharedConstants, g_sharedConstants.swappedBlendWeights, args.vertexDeclaration->swappedBlendWeights);
+        vertexDeclaration = vertexDeclaration->fp32Declaration;
+    }
+
+    if (vertexDeclaration != nullptr)
+    {
+        SetDirtyValue(g_dirtyStates.sharedConstants, g_sharedConstants.swappedTexcoords, vertexDeclaration->swappedTexcoords);
+        SetDirtyValue(g_dirtyStates.sharedConstants, g_sharedConstants.swappedNormals, vertexDeclaration->swappedNormals);
+        SetDirtyValue(g_dirtyStates.sharedConstants, g_sharedConstants.swappedBinormals, vertexDeclaration->swappedBinormals);
+        SetDirtyValue(g_dirtyStates.sharedConstants, g_sharedConstants.swappedTangents, vertexDeclaration->swappedTangents);
+        SetDirtyValue(g_dirtyStates.sharedConstants, g_sharedConstants.swappedBlendWeights, vertexDeclaration->swappedBlendWeights);
 
         uint32_t specConstants = g_pipelineState.specConstants;
-        if (args.vertexDeclaration->hasR11G11B10Normal)
+        if (vertexDeclaration->hasR11G11B10Normal)
             specConstants |= SPEC_CONSTANT_R11G11B10_NORMAL;
         else
             specConstants &= ~SPEC_CONSTANT_R11G11B10_NORMAL;
 
         SetDirtyValue(g_dirtyStates.pipelineState, g_pipelineState.specConstants, specConstants);
     }
-    SetDirtyValue(g_dirtyStates.pipelineState, g_pipelineState.vertexDeclaration, args.vertexDeclaration);
+    SetDirtyValue(g_dirtyStates.pipelineState, g_pipelineState.vertexDeclaration, vertexDeclaration);
 }
 
 static ShaderCacheEntry* FindShaderCacheEntry(XXH64_hash_t hash)
@@ -6224,6 +6637,13 @@ static void ProcSetStreamSource(const RenderCommand& cmd)
     const auto& args = cmd.setStreamSource;
 
     SetDirtyValue(g_dirtyStates.pipelineState, g_pipelineState.vertexStrides[args.index], uint8_t(args.buffer != nullptr ? args.stride : 0));
+
+    // Bookkeeping for the FLOAT16 -> FLOAT32 vertex stream conversion: remember
+    // which guest buffer, offset and stride were last bound to this stream so
+    // ApplyFp32StreamConversion can convert from the guest memory mirror.
+    g_streamGuestBuffers[args.index] = args.buffer;
+    g_streamGuestOffsets[args.index] = args.buffer != nullptr ? args.offset : 0;
+    g_streamGuestStrides[args.index] = args.buffer != nullptr ? args.stride : 0;
 
     bool dirty = false;
 

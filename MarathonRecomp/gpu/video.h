@@ -215,6 +215,7 @@ struct GuestBuffer : GuestResource
     RenderFormat format = RenderFormat::UNKNOWN;
     uint32_t guestFormat = 0;
     bool lockedReadOnly = false;
+    uint32_t uploadEpoch = 0; // bumped on every unlock upload; invalidates converted vertex streams
 };
 
 struct GuestSurfaceDesc
@@ -319,6 +320,14 @@ struct GuestVertexDeclaration : GuestResource
     bool hasR11G11B10Normal = false;
     bool vertexStreams[16]{};
     uint32_t indexVertexStream = 0;
+
+    // App-side FLOAT16 -> FLOAT32 vertex attribute conversion (Adreno 610 VFD
+    // experiment, enabled with driver_import/no_fp16_fetch.txt). The original
+    // declaration points at a converted shadow, and the shadow points back.
+    GuestVertexDeclaration* fp32Declaration = nullptr; // set on the original
+    GuestVertexDeclaration* fp32Original = nullptr;   // set on the shadow
+    uint32_t fp32ExtraStride[16] = {};                // set on the shadow: per-stream byte growth
+    bool isFp32Declaration = false;                   // set on the shadow
 };
 
 // VertexShader/PixelShader
