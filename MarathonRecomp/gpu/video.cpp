@@ -163,6 +163,14 @@ extern std::unique_ptr<RenderInterface> CreateMetalInterface();
 
 using namespace plume;
 
+// plume's Vulkan backend reports its errors through this weak-symbol hook so they
+// also land in log.txt. On Android, stderr is not visible without adb, and a
+// driver rejecting a shader at pipeline-build time would otherwise leave no trace
+// in the tester's log while every draw using that pipeline renders garbage.
+extern "C" void PlumeLogError(const char *message) {
+    LOGF_ERROR("plume: {}", message);
+}
+
 #pragma pack(push, 1)
 struct PipelineState
 {
@@ -5993,6 +6001,29 @@ static GuestVertexDeclaration* CreateVertexDeclarationWithoutAddRef(GuestVertexE
             vertexDeclaration->vertexStreams[vertexElement->stream] = true;
 
             ++vertexElement;
+        }
+
+        // Diagnostic: log each distinct vertex declaration once so device logs show
+        // the exact vertex element combinations (stream, offset, usage, raw Xenos
+        // D3DDECLTYPE) Sonic '06 feeds into its draw pipelines. The recompiled
+        // shaders assume fixed input types per location, so this table is what lets
+        // us correlate corrupted meshes with their vertex formats on-device.
+        {
+            static std::atomic<uint32_t> s_loggedDeclarationCount;
+            if (s_loggedDeclarationCount.fetch_add(1) < 64)
+            {
+                std::string elements;
+                vertexElement = vertexElements;
+                while (vertexElement->stream != 0xFF && vertexElement->type != D3DDECLTYPE_UNUSED)
+                {
+                    elements += fmt::format("s{}+{} u{}[{}] t{} ",
+                        uint32_t(vertexElement->stream), uint32_t(vertexElement->offset),
+                        uint32_t(vertexElement->usage), uint32_t(vertexElement->usageIndex),
+                        uint32_t(vertexElement->type));
+                    ++vertexElement;
+                }
+                LOGF("VertexDeclaration diag ({} elements): {}", vertexElementCount, elements);
+            }
         }
 
         auto addInputElement = [&](uint32_t usage, uint32_t usageIndex)

@@ -13,11 +13,37 @@
 #include <algorithm>
 #include <cmath>
 #include <climits>
+#include <cstdarg>
+#include <cstdio>
 #include <unordered_map>
 
 #if DLSS_ENABLED
 #   include "render/plume_dlss.h"
 #endif
+
+// Optional application hook: when the hosting app defines this symbol, backend
+// errors are routed into its log file in addition to stderr. On Android stderr is
+// not visible without adb, so without this a failed pipeline or shader creation
+// (for example a driver rejecting a shader at pipeline-build time) leaves no
+// trace in the device logs while the affected draws render garbage.
+#if defined(__GNUC__) || defined(__clang__)
+extern "C" void PlumeLogError(const char *message) __attribute__((weak));
+#endif
+
+static void plumeReportError(const char *format, ...) {
+    char message[512];
+    va_list args;
+    va_start(args, format);
+    vsnprintf(message, sizeof(message), format, args);
+    va_end(args);
+
+    fprintf(stderr, "%s\n", message);
+#if defined(__GNUC__) || defined(__clang__)
+    if (PlumeLogError != nullptr)
+        PlumeLogError(message);
+#endif
+}
+
 
 #ifndef NDEBUG
 #   define VULKAN_VALIDATION_LAYER_ENABLED
@@ -1331,7 +1357,7 @@ namespace plume {
         shaderInfo.codeSize = size;
         VkResult res = vkCreateShaderModule(device->vk, &shaderInfo, nullptr, &vk);
         if (res != VK_SUCCESS) {
-            fprintf(stderr, "vkCreateShaderModule failed with error code 0x%X.\n", res);
+            plumeReportError("vkCreateShaderModule failed with error code 0x%X.", res);
             return;
         }
     }
@@ -1373,7 +1399,7 @@ namespace plume {
 
         VkResult res = vkCreateSampler(device->vk, &samplerInfo, nullptr, &vk);
         if (res != VK_SUCCESS) {
-            fprintf(stderr, "vkCreateSampler failed with error code 0x%X.\n", res);
+            plumeReportError("vkCreateSampler failed with error code 0x%X.", res);
             return;
         }
     }
@@ -1424,7 +1450,7 @@ namespace plume {
 
         VkResult res = vkCreateComputePipelines(device->vk, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &vk);
         if (res != VK_SUCCESS) {
-            fprintf(stderr, "vkCreateComputePipelines failed with error code 0x%X.\n", res);
+            plumeReportError("vkCreateComputePipelines failed with error code 0x%X.", res);
             return;
         }
     }
@@ -1683,7 +1709,7 @@ namespace plume {
 
         VkResult res = vkCreateGraphicsPipelines(device->vk, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &vk);
         if (res != VK_SUCCESS) {
-            fprintf(stderr, "vkCreateGraphicsPipelines failed with error code 0x%X.\n", res);
+            plumeReportError("vkCreateGraphicsPipelines failed with error code 0x%X.", res);
             return;
         }
     }
@@ -3028,11 +3054,25 @@ namespace plume {
         switch (interfacePipeline->type) {
         case VulkanPipeline::Type::Compute: {
             const VulkanComputePipeline *computePipeline = static_cast<const VulkanComputePipeline *>(interfacePipeline);
+            // Pipeline creation can fail (e.g. a driver rejecting a shader); binding
+            // the null handle is undefined behaviour and silently poisons the draw.
+            if (computePipeline->vk == VK_NULL_HANDLE) {
+                static uint32_t nullComputeBindsReported;
+                if (nullComputeBindsReported++ < 20)
+                    plumeReportError("setPipeline: compute pipeline handle is NULL (pipeline creation must have failed earlier), skipping bind.");
+                break;
+            }
             vkCmdBindPipeline(vk, VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline->vk);
             break;
         }
         case VulkanPipeline::Type::Graphics: {
             const VulkanGraphicsPipeline *graphicsPipeline = static_cast<const VulkanGraphicsPipeline *>(interfacePipeline);
+            if (graphicsPipeline->vk == VK_NULL_HANDLE) {
+                static uint32_t nullGraphicsBindsReported;
+                if (nullGraphicsBindsReported++ < 20)
+                    plumeReportError("setPipeline: graphics pipeline handle is NULL (pipeline creation must have failed earlier), skipping bind.");
+                break;
+            }
             vkCmdBindPipeline(vk, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline->vk);
             break;
         }
