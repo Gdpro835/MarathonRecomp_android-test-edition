@@ -813,13 +813,16 @@ static void ProcessDriverImportDir(const std::filesystem::path &turnipDir)
         "and send that log.txt - it records what each thread was doing when frames\n"
         "stopped. The previous run is kept as log_prev.txt.\n"
         "\n"
-        "GFXReconstruct capture (for sending a GPU trace to driver developers):\n"
-        "create an empty file named gfxrecon_capture.txt in THIS folder. On the\n"
-        "next launch the game records a Vulkan trace to ../gfxr/marathon_capture.gfxr\n"
-        "(the PARENT folder's gfxr/ subfolder). Keep the session SHORT (reach the\n"
-        "spot that shows the bug, then close the game) - the file grows the whole\n"
-        "time and can get large. Send that .gfxr, then DELETE gfxrecon_capture.txt\n"
-        "to return to normal (capturing slows the game down a lot).\n"
+        "GFXReconstruct capture (offline frame debugging): create an empty\n"
+        "file named gfxrecon_capture.txt in THIS folder. On the next launch\n"
+        "the game records a Vulkan trace to Android/media/<app>/gfxr/\n"
+        "marathon_capture.gfxr (browsable with any file manager; this text\n"
+        "file's folder if it is the Android/media one). Keep the session SHORT\n"
+        "(reach the spot that shows the bug, then CLOSE the game from the\n"
+        "recents screen so the trace is finalized) - the file grows the whole\n"
+        "time and can get large. Send that .gfxr, then DELETE\n"
+        "gfxrecon_capture.txt to return to normal (capturing slows the game\n"
+        "down a lot). log.txt confirms with 'GFXReconstruct capture armed'.\n"
         "\n"
         "NON-ADRENO DEVICES (Mali / PowerVR / Xclipse): the bundled driver is\n"
         "Adreno-only, so the game automatically uses the system Vulkan driver\n"
@@ -1399,29 +1402,62 @@ static void ApplyLayerSettingsOverride(const std::string &turnipDir)
     LOGF("Applied VK_LAYER_SETTINGS_PATH override: \"{}\"", path);
 }
 
-// Optional GFXReconstruct capture. If the marker file "gfxrecon_capture.txt" is present in the
-// external driver_import/ folder, arm the bundled capture layer (enabled + configured in
-// plume_vulkan.cpp via VK_EXT_layer_settings) by setting env vars it reads at instance creation.
-// The trace is written to <external>/gfxr/marathon_capture.gfxr, which the tester copies off over
-// MTP. Off unless the marker is present: capturing adds heavy overhead and writes a large file, so
-// this is strictly a diagnostic (e.g. sending a Turnip repro to a Mesa maintainer).
+// Optional GFXReconstruct capture. If the marker file "gfxrecon_capture.txt" is present in
+// ANY driver_import/ folder (an EMPTY file is enough; all three locations are checked for
+// the same reason the control files are - file managers cannot browse Android/data on
+// Android 11+), arm the bundled capture layer: plume enables VK_LAYER_LUNARG_gfxreconstruct
+// at instance creation when MARATHON_GFXRECON_CAPTURE is set, and the layer writes its
+// trace to a folder that IS browsable over MTP (Android/media/<app>/gfxr/), falling back
+// to the app's external files dir only when the media dir is unavailable. The trace lets
+// the broken frames be replayed and inspected offline, separating app-side state problems
+// from device-side execution problems. Off unless the marker is present: capturing adds
+// heavy overhead and writes a large file, so this is strictly a diagnostic tool.
 static void ApplyGfxreconstructCapture()
 {
-    const std::filesystem::path &externalDir = os::android::GetExternalFilesDir();
-    if (externalDir.empty())
+    static const char markerName[] = "gfxrecon_capture.txt";
+
+    const std::filesystem::path *bases[] = {
+        &os::android::GetExternalFilesDir(),
+        &os::android::GetExternalMediaDir(),
+        &os::android::GetDataRoot(),
+    };
+
+    bool markerPresent = false;
+    for (const std::filesystem::path *base : bases)
+    {
+        if (base->empty())
+            continue;
+
+        std::error_code ec;
+        if (std::filesystem::exists(*base / "driver_import" / markerName, ec))
+        {
+            markerPresent = true;
+            break;
+        }
+    }
+
+    if (!markerPresent)
         return;
+
+    std::filesystem::path captureDir;
+    const std::filesystem::path &mediaDir = os::android::GetExternalMediaDir();
+    if (!mediaDir.empty())
+        captureDir = mediaDir / "gfxr";
+    else
+        captureDir = os::android::GetExternalFilesDir() / "gfxr";
 
     std::error_code ec;
-    std::filesystem::path marker = externalDir / "driver_import" / "gfxrecon_capture.txt";
-    if (!std::filesystem::exists(marker, ec))
-        return;
-
-    std::filesystem::path captureDir = externalDir / "gfxr";
     std::filesystem::create_directories(captureDir, ec);
 
     std::filesystem::path captureFile = captureDir / "marathon_capture.gfxr";
+
+    // MARATHON_GFXRECON_CAPTURE tells plume to enable the capture layer; the
+    // GFXRECON_* variables are read by the layer itself at instance creation.
+    // The timestamp suffix is disabled so the file name in the instructions is
+    // always exactly marathon_capture.gfxr.
     setenv("MARATHON_GFXRECON_CAPTURE", "1", 1);
-    setenv("MARATHON_GFXRECON_CAPTURE_FILE", captureFile.string().c_str(), 1);
+    setenv("GFXRECON_CAPTURE_FILE", captureFile.string().c_str(), 1);
+    setenv("GFXRECON_CAPTURE_FILE_TIMESTAMP", "false", 1);
 
     LOGF("GFXReconstruct capture armed (marker present). Trace: {}", captureFile.string());
 }

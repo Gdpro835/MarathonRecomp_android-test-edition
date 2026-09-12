@@ -451,6 +451,30 @@ if (ANDROID)
             "$<TARGET_FILE_DIR:MarathonRecomp>"
         COMMENT "Copying adrenotools hook libraries next to libmain.so"
     )
+
+    # Marathon: bundle the GFXReconstruct capture layer with Android builds
+    # (diagnostic-only; armed at runtime through an empty
+    # driver_import/gfxrecon_capture.txt marker file - see README-ANDROID.md).
+    # Built from a pinned upstream commit by tools/ci/build_gfxrecon_layer.sh
+    # and placed next to libmain.so, where the APK packaging step picks up every
+    # *.so. The layer stays completely idle unless the marker file exists.
+    set(MARATHON_GFXRECON_NDK "${CMAKE_ANDROID_NDK}")
+    if (NOT MARATHON_GFXRECON_NDK AND DEFINED ENV{ANDROID_NDK_HOME})
+        set(MARATHON_GFXRECON_NDK "$ENV{ANDROID_NDK_HOME}")
+    endif()
+    if (NOT WIN32 AND ANDROID_ABI STREQUAL "arm64-v8a" AND MARATHON_GFXRECON_NDK)
+        add_custom_target(marathon_gfxrecon_layer
+            COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/../tools/ci/build_gfxrecon_layer.sh
+                ${CMAKE_BINARY_DIR}/gfxreconstruct-src
+                ${CMAKE_BINARY_DIR}/gfxreconstruct-build
+                ${MARATHON_GFXRECON_NDK}
+                ${ANDROID_ABI}
+                $<TARGET_FILE_DIR:MarathonRecomp>
+            COMMENT "Building the GFXReconstruct capture layer (diagnostic)"
+            VERBATIM
+        )
+        add_dependencies(MarathonRecomp marathon_gfxrecon_layer)
+    endif()
 endif()
 
 find_package(CURL REQUIRED)

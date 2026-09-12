@@ -220,6 +220,30 @@ Processed packages move to `installed/` and are selected automatically. See the
 > `adrenotools hook missing from nativeLibraryDir`, the APK was built by an
 > older workflow; rebuild with the current `tools/ci/build-android-apk.yml`.
 
+## Recording a GPU trace (GFXReconstruct)
+
+When a rendering problem cannot be reproduced from the logs alone, the debug APK
+can record a full Vulkan trace of the broken frames, which is replayed offline
+to tell app-side state problems (wrong buffers, shaders or draw parameters -
+fixable in this repository) from device-side execution problems (the same
+inputs producing different output on the GPU).
+
+1. Build the debug APK from this repository (the build compiles the
+   `libVkLayer_gfxreconstruct.so` capture layer from a pinned upstream
+   commit automatically - see `tools/ci/build_gfxrecon_layer.sh`).
+2. Create an **empty** file `gfxrecon_capture.txt` in the
+   `Android/media/com.sega.marathon/driver_import/` folder.
+3. Launch the game, reach the spot that shows the corruption, and **close the
+   game from the recents screen** shortly after - the trace grows the whole
+   time (expect tens of MB per minute) and is finalized on clean exit.
+4. Collect `Android/media/com.sega.marathon/gfxr/marathon_capture.gfxr` with
+   any file manager, compress it (zip/7z) and share it.
+5. Delete `gfxrecon_capture.txt` afterwards - capturing slows the game down a
+   lot and is meant strictly as a diagnostic.
+
+`log.txt` confirms the capture is armed with a `GFXReconstruct capture armed`
+line on every launch while the marker is present.
+
 ## Configuration
 
 - The launcher exposes the Vulkan driver, Turnip render mode, skip-intro and diagnostic options.

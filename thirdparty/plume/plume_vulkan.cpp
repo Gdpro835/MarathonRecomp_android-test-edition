@@ -15,6 +15,8 @@
 #include <climits>
 #include <cstdarg>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <unordered_map>
 
 #if DLSS_ENABLED
@@ -4709,24 +4711,52 @@ namespace plume {
         createInfo.ppEnabledExtensionNames = enabledExtensions.data();
         createInfo.enabledExtensionCount = uint32_t(enabledExtensions.size());
 
-#   ifdef VULKAN_VALIDATION_LAYER_ENABLED
-        // Search for validation layer and enabled it.
-        uint32_t layerCount;
-        vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
+        // Marathon: optional instance layers. The GFXReconstruct capture layer is
+        // enabled through the MARATHON_GFXRECON_CAPTURE environment variable set by
+        // the Android driver loader (driver_import/gfxrecon_capture.txt marker, see
+        // ApplyGfxreconstructCapture) instead of a build flag, so release builds can
+        // capture traces as well. The layer .so ships inside the debug APK and the
+        // Android loader enumerates it from the app's native library directory.
+        const char *enabledLayerNames[2] = {};
+        uint32_t enabledLayerCount = 0;
 
-        std::vector<VkLayerProperties> availableLayers(layerCount);
-        vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
-        
-        const char validationLayerName[] = "VK_LAYER_KHRONOS_validation";
-        const char *enabledLayerNames[] = { validationLayerName };
-        for (const VkLayerProperties &layerProperties : availableLayers) {
-            if (strcmp(layerProperties.layerName, validationLayerName) == 0) {
+#   ifdef VULKAN_VALIDATION_LAYER_ENABLED
+        const bool enableValidation = true;
+#   else
+        const bool enableValidation = false;
+#   endif
+        const bool enableGfxreconCapture = std::getenv("MARATHON_GFXRECON_CAPTURE") != nullptr;
+
+        if (enableValidation || enableGfxreconCapture) {
+            // Search for the requested layers and enable them.
+            uint32_t layerCount;
+            vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
+
+            std::vector<VkLayerProperties> availableLayers(layerCount);
+            vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
+
+            const char validationLayerName[] = "VK_LAYER_KHRONOS_validation";
+            const char gfxreconLayerName[] = "VK_LAYER_LUNARG_gfxreconstruct";
+
+            for (const VkLayerProperties &layerProperties : availableLayers) {
+                if (enableValidation && strcmp(layerProperties.layerName, validationLayerName) == 0) {
+                    enabledLayerNames[enabledLayerCount++] = validationLayerName;
+                    break;
+                }
+            }
+
+            for (const VkLayerProperties &layerProperties : availableLayers) {
+                if (enableGfxreconCapture && strcmp(layerProperties.layerName, gfxreconLayerName) == 0) {
+                    enabledLayerNames[enabledLayerCount++] = gfxreconLayerName;
+                    break;
+                }
+            }
+
+            if (enabledLayerCount != 0) {
                 createInfo.ppEnabledLayerNames = enabledLayerNames;
-                createInfo.enabledLayerCount = 1;
-                break;
+                createInfo.enabledLayerCount = enabledLayerCount;
             }
         }
-#   endif
         
         res = vkCreateInstance(&createInfo, nullptr, &instance);
         if (res != VK_SUCCESS) {
